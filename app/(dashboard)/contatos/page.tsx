@@ -3,7 +3,10 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
+import { fetchAllRows } from '@/lib/fetch-all-rows';
 import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal } from 'lucide-react';
+
+const PAGE_SIZE = 200;
 
 interface Contact {
   id: string;
@@ -29,6 +32,7 @@ export default function ContatosPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'recent' | 'name' | 'last_contact'>('recent');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const supabase = createClient();
 
   const allTags = Array.from(new Set(contacts.flatMap((c) => c.tags || []))).sort();
@@ -65,6 +69,7 @@ export default function ContatosPage() {
     });
 
     setFilteredContacts(filtered);
+    setVisibleCount(PAGE_SIZE);
   }, [searchTerm, contacts, selectedTags, sortBy]);
 
   function toggleTagFilter(tag: string) {
@@ -95,19 +100,22 @@ export default function ContatosPage() {
   }
 
   async function loadContacts(wsId: string) {
-    const { data, error: loadError } = await supabase
-      .from('contacts')
-      .select('*')
-      .eq('workspace_id', wsId)
-      .order('created_at', { ascending: false });
+    const { data, error: loadError } = await fetchAllRows<Contact>((from, to) =>
+      supabase
+        .from('contacts')
+        .select('*')
+        .eq('workspace_id', wsId)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+    );
 
     if (loadError) {
       console.error('Erro ao carregar contatos:', loadError);
-      setError('Erro ao carregar contatos: ' + loadError.message);
+      setError('Erro ao carregar contatos');
       return;
     }
 
-    setContacts(data || []);
+    setContacts(data);
   }
 
   async function handleAddContact(e: React.FormEvent) {
@@ -391,7 +399,7 @@ export default function ContatosPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredContacts.map((contact) => {
+                  {filteredContacts.slice(0, visibleCount).map((contact) => {
                     const label = contact.name || contact.push_name || 'Sem nome';
                     return (
                     <tr key={contact.id} className="transition-colors duration-200 hover:bg-primary/5">
@@ -435,6 +443,17 @@ export default function ContatosPage() {
                   })}
                 </tbody>
               </table>
+
+              {filteredContacts.length > visibleCount && (
+                <div className="p-4 text-center border-t border-border">
+                  <button
+                    onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
+                    className="px-6 py-2 border border-border rounded-xl font-medium text-sm text-foreground hover:bg-muted"
+                  >
+                    Carregar mais ({filteredContacts.length - visibleCount} restantes)
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

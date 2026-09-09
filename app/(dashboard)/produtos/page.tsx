@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
+import { fetchAllRows } from '@/lib/fetch-all-rows';
 import { readFileAsText, parseProductsCsv, ImportResult } from '@/lib/csv-import';
 import { ProductDetailModal } from '@/components/product-detail-modal';
 import { SkeletonCard, Skeleton } from '@/components/skeleton';
@@ -32,6 +33,7 @@ interface Category {
 }
 
 const BATCH_SIZE = 200;
+const PAGE_SIZE = 200;
 
 export default function ProdutosPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -73,6 +75,7 @@ export default function ProdutosPage() {
   const [categoryError, setCategoryError] = useState('');
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
@@ -132,6 +135,10 @@ export default function ProdutosPage() {
     init();
   }, []);
 
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [searchTerm, categoryFilter, stockFilter, priceMin, priceMax, selectedTags]);
+
   async function init() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
@@ -154,18 +161,21 @@ export default function ProdutosPage() {
   }
 
   async function loadProducts(wsId: string) {
-    const { data, error: loadError } = await supabase
-      .from('products')
-      .select('*')
-      .eq('workspace_id', wsId)
-      .order('created_at', { ascending: false });
+    const { data, error: loadError } = await fetchAllRows<Product>((from, to) =>
+      supabase
+        .from('products')
+        .select('*')
+        .eq('workspace_id', wsId)
+        .order('created_at', { ascending: false })
+        .range(from, to)
+    );
 
     if (loadError) {
-      setError('Erro ao carregar produtos: ' + loadError.message);
+      setError('Erro ao carregar produtos');
       return;
     }
 
-    setProducts(data || []);
+    setProducts(data);
   }
 
   async function loadCategories(wsId: string) {
@@ -1090,7 +1100,7 @@ export default function ProdutosPage() {
                 </div>
               </div>
             ) : (
-              filteredProducts.map((product) => {
+              filteredProducts.slice(0, visibleCount).map((product) => {
                 const outOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
                 return (
                 <div
@@ -1256,7 +1266,7 @@ export default function ProdutosPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border">
-                    {filteredProducts.map((product) => {
+                    {filteredProducts.slice(0, visibleCount).map((product) => {
                       const outOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
                       return (
                       <tr
@@ -1361,6 +1371,17 @@ export default function ProdutosPage() {
                 </table>
               </div>
             )}
+          </div>
+        )}
+
+        {filteredProducts.length > visibleCount && (
+          <div className="mt-4 text-center">
+            <button
+              onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
+              className="px-6 py-2 border border-border rounded-xl font-medium text-sm text-foreground hover:bg-muted"
+            >
+              Carregar mais ({filteredProducts.length - visibleCount} restantes)
+            </button>
           </div>
         )}
       </div>

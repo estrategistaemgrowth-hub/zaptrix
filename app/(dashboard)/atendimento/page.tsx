@@ -33,6 +33,8 @@ import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
 import { QuickRepliesModal, type QuickReply } from '@/components/quick-replies-modal';
 
+const CONVERSATIONS_FETCH_LIMIT = 500;
+
 interface Conversation {
   id: string;
   status: 'open' | 'closed' | 'archived' | 'follow_up' | 'won' | 'lost';
@@ -317,7 +319,11 @@ export default function AtendimentoPage() {
       .eq('workspace_id', wsId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
       .order('created_at', { ascending: false, foreignTable: 'messages' })
-      .limit(1, { foreignTable: 'messages' });
+      .limit(1, { foreignTable: 'messages' })
+      // Cap defensivo: sem isso, o PostgREST corta em 1000 linhas por padrão
+      // sem aviso nenhum. Ordenado por atividade mais recente, então o que
+      // fica de fora são as conversas mais antigas/paradas — não as abertas.
+      .limit(CONVERSATIONS_FETCH_LIMIT);
 
     if (loadError) {
       console.error('Erro ao carregar conversas:', loadError);
@@ -669,7 +675,11 @@ export default function AtendimentoPage() {
           <MessageCircle className="w-8 h-8 text-primary" />
           <div>
             <h1 className="text-2xl font-bold text-foreground">Atendimento</h1>
-            <p className="text-sm text-muted-foreground">{conversations.length} conversas</p>
+            <p className="text-sm text-muted-foreground">
+              {conversations.length} conversas
+              {conversations.length >= CONVERSATIONS_FETCH_LIMIT &&
+                ' (mostrando as mais recentes — conversas antigas paradas podem não aparecer)'}
+            </p>
           </div>
         </div>
 

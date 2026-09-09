@@ -63,6 +63,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string, webho
     method: 'POST',
     body: JSON.stringify({
       webhook: {
+        enabled: true,
         url: `${webhookUrl}?token=${webhookSecret}`,
         byEvents: false,
         base64: true,

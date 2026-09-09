@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
-import { getConnectionState } from '@/lib/evolution-api';
+import { getConnectionState, fetchInstancePhoneNumber } from '@/lib/evolution-api';
 
 const STATE_MAP: Record<string, string> = {
   open: 'connected',
@@ -25,7 +25,7 @@ export async function GET(request: NextRequest) {
 
   const { data: connection } = await supabase
     .from('whatsapp_connections')
-    .select('id, workspace_id, instance_name, status')
+    .select('id, workspace_id, instance_name, status, phone_number')
     .eq('id', connectionId)
     .maybeSingle();
 
@@ -37,10 +37,19 @@ export async function GET(request: NextRequest) {
     const result = await getConnectionState(connection.instance_name);
     const newStatus = STATE_MAP[result.instance.state] || 'disconnected';
 
-    if (newStatus !== connection.status) {
+    if (newStatus !== connection.status || (newStatus === 'connected' && !connection.phone_number)) {
+      const phoneNumber =
+        newStatus === 'connected'
+          ? await fetchInstancePhoneNumber(connection.instance_name).catch(() => null)
+          : connection.phone_number;
+
       await supabase
         .from('whatsapp_connections')
-        .update({ status: newStatus, last_connection_at: new Date().toISOString() })
+        .update({
+          status: newStatus,
+          last_connection_at: new Date().toISOString(),
+          ...(phoneNumber ? { phone_number: phoneNumber } : {}),
+        })
         .eq('id', connectionId);
     }
 

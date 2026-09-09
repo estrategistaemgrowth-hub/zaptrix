@@ -39,6 +39,38 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Conversa não encontrada' }, { status: 404 });
   }
 
+  const { data: connection } = await supabase
+    .from('whatsapp_connections')
+    .select('instance_name')
+    .eq('workspace_id', membership.workspace_id)
+    .eq('status', 'connected')
+    .maybeSingle();
+
+  const contact = Array.isArray(conversation.contact) ? conversation.contact[0] : conversation.contact;
+  const phone = contact?.phone;
+
+  // Manda primeiro pelo WhatsApp (quando há conexão) pra já capturar o
+  // key.id retornado pela Evolution API e gravar como external_message_id —
+  // sem isso, o rastreamento de entregue/lido (wa_status) nunca teria como
+  // casar a atualização vinda do webhook MESSAGES_UPDATE com esta mensagem.
+  let externalMessageId: string | null = null;
+  let waStatus = 'sent';
+  let warning: string | undefined;
+
+  if (!connection || !phone) {
+    waStatus = 'failed';
+    warning = 'Mensagem salva no histórico, mas não há WhatsApp conectado para enviar.';
+  } else {
+    try {
+      const sendResult = await sendTextMessage(connection.instance_name, phone, text);
+      externalMessageId = sendResult?.key?.id || null;
+    } catch (err) {
+      console.error('Erro ao enviar mensagem pelo WhatsApp:', err);
+      waStatus = 'failed';
+      warning = 'Mensagem salva, mas o WhatsApp não confirmou o envio.';
+    }
+  }
+
   const { error: messageError } = await supabase.from('messages').insert([
     {
       workspace_id: membership.workspace_id,
@@ -46,6 +78,8 @@ export async function POST(request: NextRequest) {
       sender_type: 'human',
       direction: 'outbound',
       content: text,
+      external_message_id: externalMessageId,
+      wa_status: waStatus,
     },
   ]);
 
@@ -61,31 +95,5 @@ export async function POST(request: NextRequest) {
     })
     .eq('id', conversationId);
 
-  const { data: connection } = await supabase
-    .from('whatsapp_connections')
-    .select('instance_name')
-    .eq('workspace_id', membership.workspace_id)
-    .eq('status', 'connected')
-    .maybeSingle();
-
-  const contact = Array.isArray(conversation.contact) ? conversation.contact[0] : conversation.contact;
-  const phone = contact?.phone;
-
-  if (!connection || !phone) {
-    return NextResponse.json({
-      sent: false,
-      warning: 'Mensagem salva no histórico, mas não há WhatsApp conectado para enviar.',
-    });
-  }
-
-  try {
-    await sendTextMessage(connection.instance_name, phone, text);
-    return NextResponse.json({ sent: true });
-  } catch (err) {
-    console.error('Erro ao enviar mensagem pelo WhatsApp:', err);
-    return NextResponse.json({
-      sent: false,
-      warning: 'Mensagem salva, mas o WhatsApp não confirmou o envio.',
-    });
-  }
+  return NextResponse.json(warning ? { sent: false, warning } : { sent: true });
 }

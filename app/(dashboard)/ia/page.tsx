@@ -134,7 +134,7 @@ const AGENT_TEMPLATES: AgentTemplate[] = [
       forbidden_topics:
         'Reclamações de pedidos antigos (encaminhar para o suporte), críticas a concorrentes, assuntos pessoais fora do contexto de compra.',
       business_rules:
-        'Desconto máximo automático de 10% em compras à vista via Pix, sem necessitar aprovação humana; qualquer desconto acima disso precisa de aprovação humana antes de ser oferecido. Usar urgência real (estoque baixo, cupom com validade, frete grátis por tempo limitado) — nunca inventar prazo ou quantidade que não existam. Se o cliente pedir para falar com um humano ou demonstrar que já decidiu comprar, agilizar o fechamento em vez de insistir em mais argumentos. Sempre oferecer 1 produto complementar (upsell) depois que o cliente confirmar interesse no item principal.',
+        'Desconto máximo automático de 10% em compras à vista via Pix, sem necessitar aprovação humana; qualquer desconto acima disso precisa de aprovação humana antes de ser oferecido. Usar urgência real quando ela existir de fato (ex: estoque baixo confirmado no catálogo, cupom com validade cadastrada) — nunca mencionar frete grátis, desconto, cupom ou prazo que não esteja explicitamente na Base de Conhecimento ou no catálogo de produtos; se não houver essa informação, não mencionar promoção nenhuma. Se o cliente pedir para falar com um humano ou demonstrar que já decidiu comprar, agilizar o fechamento em vez de insistir em mais argumentos. Sempre oferecer 1 produto complementar (upsell) depois que o cliente confirmar interesse no item principal.',
     },
   },
   {

@@ -56,6 +56,7 @@ interface WorkspaceMember {
 interface WhatsAppConnection {
   id: string;
   instance_name: string;
+  phone_number: string | null;
   status: 'connected' | 'disconnected' | 'connecting' | 'error';
   min_delay_seconds: number;
   max_delay_seconds: number;
@@ -222,7 +223,7 @@ export default function ConfiguracoesPage() {
   async function loadConnections(wsId: string) {
     const { data } = await supabase
       .from('whatsapp_connections')
-      .select('id, instance_name, status, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
+      .select('id, instance_name, phone_number, status, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
       .eq('workspace_id', wsId)
       .order('created_at', { ascending: false });
 
@@ -726,7 +727,7 @@ export default function ConfiguracoesPage() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground flex items-center gap-2">
-                      {conn.instance_name}
+                      {conn.phone_number ? `+${conn.phone_number}` : conn.instance_name}
                       <StatusBadge
                         label={
                           conn.status === 'connected'

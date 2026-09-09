@@ -68,7 +68,10 @@ function buildSystemPrompt(profile: {
       'catálogo de produtos abaixo — nunca mencione produto, categoria ou segmento que não esteja nessa lista. ' +
       'Se o cliente perguntar sobre frete, prazo de entrega ou valor de envio, nunca invente ou estime um ' +
       'valor — envie o link do produto (campo "Link" do catálogo) e peça para ele calcular o frete direto no ' +
-      'site, que já tem cálculo de frete em tempo real pelo CEP.'
+      'site, que já tem cálculo de frete em tempo real pelo CEP. Nunca mencione frete grátis, desconto, cupom ' +
+      'ou qualquer promoção que não esteja explicitamente escrita na Base de Conhecimento ou no catálogo — ' +
+      'você não tem acesso ao site da loja em tempo real, então promoções e políticas só existem se estiverem ' +
+      'escritas abaixo.'
   );
   return lines.join('\n');
 }
@@ -382,6 +385,55 @@ async function updateContactMemory(
 }
 
 /**
+ * Best-effort: pede pro mesmo provider/modelo já configurado classificar o
+ * estágio do negócio a partir da última troca de mensagens (sem histórico
+ * completo — não vale o custo/latência extra para essa classificação curta).
+ * GANHO/PERDIDO movem a conversa direto para a coluna correspondente do
+ * Kanban; INCERTO liga a tag "Analisar conversa" sem mudar a coluna; qualquer
+ * outra resposta (CONTINUAR ou fora do esperado) não faz nada — é o
+ * comportamento atual, sem mudança.
+ */
+async function classifyDealStage(
+  admin: ReturnType<typeof createAdminClient>,
+  conversationId: string,
+  provider: AiProvider,
+  apiKey: string,
+  model: string,
+  latestExchange: string
+) {
+  try {
+    const prompt =
+      `Última troca de mensagens:\n${latestExchange}\n\n` +
+      'Com base nesta conversa, o negócio deve ser considerado GANHO (cliente confirmou compra/fechou ' +
+      'pedido), PERDIDO (cliente desistiu claramente, disse não ter interesse, ou pediu para não ser mais ' +
+      'contatado), CONTINUAR (ainda em negociação/atendimento normal), ou você NÃO TEM CERTEZA. Responda com ' +
+      'APENAS uma palavra: GANHO, PERDIDO, CONTINUAR ou INCERTO.';
+
+    const raw = await callLlm(
+      provider,
+      apiKey,
+      model,
+      'Você classifica o estágio de um negócio de vendas a partir de uma troca de mensagens de WhatsApp. ' +
+        'Responda com uma única palavra, sem pontuação e sem comentários.',
+      [{ role: 'user', content: prompt }]
+    );
+
+    const verdict = raw.trim().toUpperCase();
+
+    if (verdict.startsWith('GANHO')) {
+      await admin.from('conversations').update({ status: 'won', needs_review: false }).eq('id', conversationId);
+    } else if (verdict.startsWith('PERDIDO')) {
+      await admin.from('conversations').update({ status: 'lost', needs_review: false }).eq('id', conversationId);
+    } else if (verdict.startsWith('INCERTO')) {
+      await admin.from('conversations').update({ needs_review: true }).eq('id', conversationId);
+    }
+    // CONTINUAR ou qualquer resposta fora do esperado: nenhuma mudança.
+  } catch (error) {
+    console.error('Erro ao classificar estágio do negócio:', error);
+  }
+}
+
+/**
  * Gera e envia a resposta automática da IA para a mensagem recém-recebida.
  * Best-effort: qualquer falha aqui é logada mas não derruba o webhook, já que
  * a mensagem do cliente já foi salva com sucesso antes desta chamada.
@@ -416,11 +468,12 @@ async function tryAutoReply({
 
     if (profile.business_hours_enabled && !isWithinBusinessHours(profile.business_hours)) {
       if (profile.out_of_hours_message) {
-        await sendTextMessage(instanceName, phone, profile.out_of_hours_message);
+        const sendResult = await sendTextMessage(instanceName, phone, profile.out_of_hours_message);
         await admin.from('messages').insert([
           {
             workspace_id: workspaceId,
             conversation_id: conversationId,
+            external_message_id: sendResult?.key?.id || null,
             direction: 'outbound',
             sender_type: 'system',
             content: profile.out_of_hours_message,
@@ -489,11 +542,12 @@ async function tryAutoReply({
       const match = productImages.get(name.trim().toLowerCase());
       if (!match) continue;
       try {
-        await sendImageByUrl(instanceName, phone, match.imageUrl, name);
+        const sendResult = await sendImageByUrl(instanceName, phone, match.imageUrl, name);
         await admin.from('messages').insert([
           {
             workspace_id: workspaceId,
             conversation_id: conversationId,
+            external_message_id: sendResult?.key?.id || null,
             direction: 'outbound',
             sender_type: 'ai',
             message_type: 'image',
@@ -511,17 +565,33 @@ async function tryAutoReply({
 
     for (let i = 0; i < messageChunks.length; i++) {
       if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1200));
-      await sendTextMessage(instanceName, phone, messageChunks[i]);
+      const sendResult = await sendTextMessage(instanceName, phone, messageChunks[i]);
       await admin.from('messages').insert([
         {
           workspace_id: workspaceId,
           conversation_id: conversationId,
+          external_message_id: sendResult?.key?.id || null,
           direction: 'outbound',
           sender_type: 'ai',
           content: messageChunks[i],
         },
       ]);
     }
+
+    // Best-effort: classifica o estágio do negócio com base só na última troca
+    // (cliente + resposta que acabou de ser enviada) — sem histórico completo,
+    // pra não pesar latência/custo. Roda antes do updateContactMemory (que usa
+    // o mesmo par de mensagens) mas depois de a resposta já ter sido entregue
+    // ao cliente — qualquer erro aqui nunca derruba o fluxo principal.
+    const lastCustomerMessageForStage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
+    await classifyDealStage(
+      admin,
+      conversationId,
+      credential.provider as AiProvider,
+      apiKey,
+      credential.model_id || '',
+      `Cliente: ${lastCustomerMessageForStage}\nIA: ${replyText}`
+    );
 
     await admin
       .from('conversations')
@@ -571,9 +641,107 @@ async function tryAutoReply({
   }
 }
 
+/**
+ * Mapeia o ack numérico do Baileys (repassado pela Evolution API no evento
+ * MESSAGES_UPDATE) para o `wa_status` simplificado que a UI mostra:
+ * 0=erro, 1=pending/enviado, 2=server ack (entregue ao WhatsApp), 3=device ack
+ * (entregue no aparelho), 4=lido, 5=reproduzido (áudio/vídeo — conta como
+ * lido). Também aceita a forma em string que algumas versões da Evolution API
+ * mandam no lugar do número (ex.: "DELIVERY_ACK", "READ").
+ */
+function mapAckToWaStatus(ack: unknown): 'sent' | 'delivered' | 'read' | 'failed' | null {
+  if (ack === null || ack === undefined) return null;
+
+  const numeric = typeof ack === 'number' ? ack : Number(ack);
+  if (!Number.isNaN(numeric)) {
+    if (numeric <= 0) return 'failed';
+    if (numeric === 1) return 'sent';
+    if (numeric === 2 || numeric === 3) return 'delivered';
+    if (numeric >= 4) return 'read';
+    return null;
+  }
+
+  const text = String(ack).toUpperCase();
+  if (text.includes('ERROR') || text.includes('FAIL')) return 'failed';
+  if (text.includes('READ') || text.includes('PLAYED')) return 'read';
+  if (text.includes('DELIVERY') || text.includes('DELIVERED') || text.includes('SERVER_ACK')) return 'delivered';
+  if (text.includes('PENDING') || text.includes('SENT')) return 'sent';
+  return null;
+}
+
+/**
+ * Handler do evento MESSAGES_UPDATE (confirmação de entrega/leitura). O
+ * `console.log` do payload cru fica de propósito: o formato exato do evento
+ * NÃO foi confirmado contra uma mensagem real da Evolution API nesta sessão
+ * (documentação e o padrão do evento `messages.update` do Baileys foram
+ * usados como base) — ver ressalva no relatório final. Se o formato divergir,
+ * este log em produção (Vercel) é o que permite ajustar sem adivinhar de novo.
+ * Best-effort puro: qualquer erro aqui é só logado, nunca propagado.
+ */
+async function handleMessagesUpdate(payload: EvolutionWebhookPayload, request: NextRequest) {
+  try {
+    console.log('[webhook] messages.update payload recebido:', JSON.stringify(payload));
+
+    const instanceName = payload.instance || (payload.data as any)?.instanceName;
+    if (!instanceName) return NextResponse.json({ status: 'ignored_no_instance' });
+
+    const token = request.nextUrl.searchParams.get('token');
+    const admin = createAdminClient();
+
+    const { data: connection } = await admin
+      .from('whatsapp_connections')
+      .select('workspace_id, webhook_secret')
+      .eq('instance_name', instanceName)
+      .maybeSingle();
+
+    if (!connection || token !== connection.webhook_secret) {
+      return NextResponse.json({ status: 'ignored_unauthorized' });
+    }
+
+    // A Evolution API pode mandar `data` como um único objeto de update, um
+    // array de updates, ou um objeto com `updates: [...]` dentro — normaliza
+    // pra sempre iterar uma lista.
+    const rawData: any = payload.data;
+    const updates: any[] = Array.isArray(rawData)
+      ? rawData
+      : Array.isArray(rawData?.updates)
+      ? rawData.updates
+      : rawData
+      ? [rawData]
+      : [];
+
+    for (const update of updates) {
+      const externalId: string | undefined = update?.key?.id || update?.keyId || update?.id;
+      const ackRaw = update?.update?.status ?? update?.status ?? update?.ack;
+      const waStatus = mapAckToWaStatus(ackRaw);
+
+      if (!externalId || !waStatus) continue;
+
+      const { error: updateError } = await admin
+        .from('messages')
+        .update({ wa_status: waStatus })
+        .eq('workspace_id', connection.workspace_id)
+        .eq('external_message_id', externalId);
+
+      if (updateError) {
+        console.error('Erro ao atualizar wa_status da mensagem:', updateError);
+      }
+    }
+
+    return NextResponse.json({ status: 'success' });
+  } catch (error) {
+    console.error('Erro ao processar messages.update:', error);
+    return NextResponse.json({ status: 'error_ignored' });
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const payload: EvolutionWebhookPayload = await request.json();
+
+    if (payload.event === 'messages.update') {
+      return handleMessagesUpdate(payload, request);
+    }
 
     if (payload.event !== 'messages.upsert') {
       return NextResponse.json({ status: 'ignored' });

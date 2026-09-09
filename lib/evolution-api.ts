@@ -49,6 +49,23 @@ export async function getConnectionState(instanceName: string): Promise<Connecti
   return evolutionFetch(`/instance/connectionState/${instanceName}`);
 }
 
+interface FetchInstanceInfo {
+  ownerJid?: string | null;
+}
+
+/** Busca o número de telefone conectado (via ownerJid) — só existe depois que
+ *  a instância conecta de fato; connectionState/create não trazem esse dado. */
+export async function fetchInstancePhoneNumber(instanceName: string): Promise<string | null> {
+  const data = (await evolutionFetch(
+    `/instance/fetchInstances?instanceName=${encodeURIComponent(instanceName)}`
+  )) as FetchInstanceInfo[];
+
+  const ownerJid = data?.[0]?.ownerJid;
+  if (!ownerJid) return null;
+
+  return ownerJid.replace(/@s\.whatsapp\.net$/, '').replace(/@.*/, '');
+}
+
 /** Reconecta uma instância existente e retorna um novo QR code (ex: após logout/expirar). */
 export async function reconnectInstance(instanceName: string): Promise<CreateInstanceResponse> {
   return evolutionFetch(`/instance/connect/${instanceName}`);
@@ -67,7 +84,7 @@ export async function setWebhook(instanceName: string, webhookUrl: string, webho
         url: `${webhookUrl}?token=${webhookSecret}`,
         byEvents: false,
         base64: true,
-        events: ['MESSAGES_UPSERT'],
+        events: ['MESSAGES_UPSERT', 'MESSAGES_UPDATE'],
       },
     }),
   });

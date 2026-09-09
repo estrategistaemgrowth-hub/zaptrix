@@ -17,6 +17,9 @@ import {
   Paperclip,
   FileText,
   Brain,
+  AlertTriangle,
+  Check,
+  CheckCheck,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
@@ -24,8 +27,9 @@ import { StatusBadge } from '@/components/status-badge';
 
 interface Conversation {
   id: string;
-  status: 'open' | 'closed' | 'archived';
+  status: 'open' | 'closed' | 'archived' | 'follow_up' | 'won' | 'lost';
   ai_enabled: boolean;
+  needs_review: boolean;
   last_message_at: string | null;
   unread_count: number | null;
   contact: {
@@ -40,14 +44,53 @@ interface Conversation {
   } | null;
 }
 
-/** Colunas do Kanban — espelham 1:1 o enum `conversation_status` do banco
- *  (supabase/migrations/0001_create_zaptrix_schema.sql: 'open' | 'closed' | 'archived').
- *  Nenhum estado extra é inventado aqui. */
+/** Colunas do Kanban — funil de vendas construído sobre o enum
+ *  `conversation_status` do banco (supabase/migrations/0001_create_zaptrix_schema.sql
+ *  + 0021_deal_stages_and_message_status.sql: acrescenta 'follow_up' | 'won' | 'lost').
+ *  'closed' e 'archived' continuam existindo no enum mas não são mais colunas
+ *  centrais do Kanban — a IA e o humano trabalham o funil por aqui. */
 const KANBAN_COLUMNS: { status: Conversation['status']; label: string; dot: string }[] = [
   { status: 'open', label: 'Aberta', dot: 'bg-emerald-500' },
-  { status: 'archived', label: 'Arquivada', dot: 'bg-amber-500' },
-  { status: 'closed', label: 'Fechada', dot: 'bg-gray-400' },
+  { status: 'follow_up', label: 'Follow-up', dot: 'bg-blue-500' },
+  { status: 'won', label: 'Negócio Fechado', dot: 'bg-green-600' },
+  { status: 'lost', label: 'Negócio Perdido', dot: 'bg-destructive' },
 ];
+
+function statusLabel(status: Conversation['status']): string {
+  switch (status) {
+    case 'open':
+      return 'Aberta';
+    case 'follow_up':
+      return 'Follow-up';
+    case 'won':
+      return 'Negócio Fechado';
+    case 'lost':
+      return 'Negócio Perdido';
+    case 'archived':
+      return 'Arquivada';
+    case 'closed':
+    default:
+      return 'Fechada';
+  }
+}
+
+function statusDotClass(status: Conversation['status']): string {
+  switch (status) {
+    case 'open':
+      return 'bg-emerald-500';
+    case 'follow_up':
+      return 'bg-blue-500';
+    case 'won':
+      return 'bg-green-600';
+    case 'lost':
+      return 'bg-destructive';
+    case 'archived':
+      return 'bg-amber-500';
+    case 'closed':
+    default:
+      return 'bg-gray-400';
+  }
+}
 
 const VIEW_MODE_STORAGE_KEY = 'zaptrix:atendimento:view-mode';
 
@@ -65,6 +108,8 @@ function timeAgo(dateStr: string | null): string | null {
 
 type MessageType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
 
+type WaStatus = 'sent' | 'delivered' | 'read' | 'failed';
+
 interface Message {
   id: string;
   conversation_id: string;
@@ -75,6 +120,7 @@ interface Message {
   media_mime_type?: string | null;
   media_caption?: string | null;
   transcript?: string | null;
+  wa_status?: WaStatus | null;
   created_at: string;
 }
 
@@ -178,7 +224,7 @@ export default function AtendimentoPage() {
     const { data, error: loadError } = await supabase
       .from('conversations')
       .select(
-        'id, status, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
+        'id, status, needs_review, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
       )
       .eq('workspace_id', wsId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -207,16 +253,32 @@ export default function AtendimentoPage() {
   async function handleSelectConversation(conv: Conversation) {
     setSelectedConversation(conv);
 
-    if (!conv.unread_count) return;
+    const shouldClearUnread = !!conv.unread_count;
+    const shouldClearReview = !!conv.needs_review;
+    if (!shouldClearUnread && !shouldClearReview) return;
 
     // Zera localmente na hora (feedback imediato) e persiste no banco — sem
     // isso, o próximo polling de loadConversations traria o valor antigo de
-    // volta e a notificação "voltaria" sozinha.
+    // volta e a notificação/tag "voltaria" sozinha. Abrir o card já conta como
+    // o humano "interagindo" com ele — resolve a tag "Analisar conversa"
+    // junto com o zerar do não lido.
     setConversations((current) =>
-      current.map((c) => (c.id === conv.id ? { ...c, unread_count: 0 } : c))
+      current.map((c) =>
+        c.id === conv.id
+          ? {
+              ...c,
+              unread_count: shouldClearUnread ? 0 : c.unread_count,
+              needs_review: shouldClearReview ? false : c.needs_review,
+            }
+          : c
+      )
     );
 
-    await supabase.from('conversations').update({ unread_count: 0 }).eq('id', conv.id);
+    const updatePayload: Record<string, unknown> = {};
+    if (shouldClearUnread) updatePayload.unread_count = 0;
+    if (shouldClearReview) updatePayload.needs_review = false;
+
+    await supabase.from('conversations').update(updatePayload).eq('id', conv.id);
   }
 
   async function loadMessages(conversationId: string) {
@@ -343,7 +405,7 @@ export default function AtendimentoPage() {
 
     const { error: updateError } = await supabase
       .from('conversations')
-      .update({ status: 'closed' })
+      .update({ status: 'closed', needs_review: false })
       .eq('id', selectedConversation.id);
 
     if (updateError) {
@@ -363,17 +425,21 @@ export default function AtendimentoPage() {
 
     const previous = conversations;
 
+    // Mover manualmente (drag ou botão "Mover para X") é sempre ação humana —
+    // conta como revisão feita, então zera a tag "Analisar conversa" junto.
     // Atualização otimista — o Kanban reage na hora, sem esperar o round-trip.
     setConversations((prev) =>
-      prev.map((c) => (c.id === conversationId ? { ...c, status: newStatus } : c))
+      prev.map((c) => (c.id === conversationId ? { ...c, status: newStatus, needs_review: false } : c))
     );
     setSelectedConversation((current) =>
-      current && current.id === conversationId ? { ...current, status: newStatus } : current
+      current && current.id === conversationId
+        ? { ...current, status: newStatus, needs_review: false }
+        : current
     );
 
     const { error: updateError } = await supabase
       .from('conversations')
-      .update({ status: newStatus })
+      .update({ status: newStatus, needs_review: false })
       .eq('id', conversationId);
 
     if (updateError) {
@@ -509,14 +575,10 @@ export default function AtendimentoPage() {
                         {initial}
                       </div>
                       <span
-                        title={conv.status === 'open' ? 'Aberta' : conv.status === 'archived' ? 'Arquivada' : 'Fechada'}
-                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-card ${
-                          conv.status === 'open'
-                            ? 'bg-emerald-500'
-                            : conv.status === 'archived'
-                            ? 'bg-amber-500'
-                            : 'bg-gray-400'
-                        }`}
+                        title={statusLabel(conv.status)}
+                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-card ${statusDotClass(
+                          conv.status
+                        )}`}
                       />
                     </div>
                     <div className="flex-1 min-w-0">
@@ -526,7 +588,7 @@ export default function AtendimentoPage() {
                       <p className="text-sm text-muted-foreground line-clamp-1">
                         {conv.contact?.phone || '—'}
                       </p>
-                      <div className="flex items-center gap-2 mt-1">
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
                         {conv.last_message_at && (
                           <p className="text-xs text-muted-foreground">
                             <Clock className="w-3 h-3 inline mr-1" />
@@ -545,6 +607,15 @@ export default function AtendimentoPage() {
                             <BotOff className="w-3 h-3" /> Manual
                           </span>
                         )}
+                        {conv.needs_review && (
+                          <StatusBadge
+                            label="Analisar conversa"
+                            icon={AlertTriangle}
+                            active={false}
+                            tone="warning"
+                            className="!py-0.5 !text-[10px]"
+                          />
+                        )}
                       </div>
                     </div>
                   </div>
@@ -555,7 +626,7 @@ export default function AtendimentoPage() {
           </div>
         </div>
         ) : (
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4 overflow-hidden">
+        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 overflow-hidden">
           {KANBAN_COLUMNS.map((col) => {
             const columnConversations = conversations.filter((c) => c.status === col.status);
             const otherColumns = KANBAN_COLUMNS.filter((c) => c.status !== col.status);
@@ -610,17 +681,28 @@ export default function AtendimentoPage() {
                           }`}
                         >
                           <div className="flex items-center justify-between gap-2 mb-2.5">
-                            {conv.ai_enabled ? (
-                              <StatusBadge label="IA" icon={Bot} active className="!py-0.5 !text-[11px]" />
-                            ) : (
-                              <StatusBadge
-                                label="Manual"
-                                icon={BotOff}
-                                active={false}
-                                tone="neutral"
-                                className="!py-0.5 !text-[11px]"
-                              />
-                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                              {conv.ai_enabled ? (
+                                <StatusBadge label="IA" icon={Bot} active className="!py-0.5 !text-[11px]" />
+                              ) : (
+                                <StatusBadge
+                                  label="Manual"
+                                  icon={BotOff}
+                                  active={false}
+                                  tone="neutral"
+                                  className="!py-0.5 !text-[11px]"
+                                />
+                              )}
+                              {conv.needs_review && (
+                                <StatusBadge
+                                  label="Analisar conversa"
+                                  icon={AlertTriangle}
+                                  active={false}
+                                  tone="warning"
+                                  className="!py-0.5 !text-[11px]"
+                                />
+                              )}
+                            </div>
                             {typeof conv.unread_count === 'number' && conv.unread_count > 0 && (
                               <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 flex items-center justify-center gradient-brand text-white text-[11px] font-semibold rounded-full shadow-sm">
                                 {conv.unread_count}
@@ -819,11 +901,22 @@ export default function AtendimentoPage() {
                           <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
                         )}
 
-                        <p className="text-xs opacity-70 mt-1">
-                          {new Date(msg.created_at).toLocaleTimeString('pt-BR', {
-                            hour: '2-digit',
-                            minute: '2-digit',
-                          })}
+                        <p className="text-xs opacity-70 mt-1 flex items-center justify-end gap-1">
+                          <span>
+                            {new Date(msg.created_at).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </span>
+                          {msg.sender_type !== 'customer' && msg.wa_status === 'sent' && (
+                            <Check className="w-3.5 h-3.5 flex-shrink-0" />
+                          )}
+                          {msg.sender_type !== 'customer' && msg.wa_status === 'delivered' && (
+                            <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" />
+                          )}
+                          {msg.sender_type !== 'customer' && msg.wa_status === 'read' && (
+                            <CheckCheck className="w-3.5 h-3.5 flex-shrink-0 text-sky-400" />
+                          )}
                         </p>
                       </div>
                     </div>

@@ -92,6 +92,45 @@ export async function POST(request: NextRequest) {
   const { data: publicUrlData } = admin.storage.from('message-media').getPublicUrl(path);
   const mediaUrl = publicUrlData.publicUrl;
 
+  const { data: connection } = await supabase
+    .from('whatsapp_connections')
+    .select('instance_name')
+    .eq('workspace_id', membership.workspace_id)
+    .eq('status', 'connected')
+    .maybeSingle();
+
+  const contact = Array.isArray(conversation.contact) ? conversation.contact[0] : conversation.contact;
+  const phone = contact?.phone;
+
+  // Mesmo padrão do send-message: envia primeiro pra capturar o key.id da
+  // Evolution API e gravar como external_message_id, senão o rastreamento de
+  // entregue/lido nunca casa a mensagem com o evento MESSAGES_UPDATE.
+  let externalMessageId: string | null = null;
+  let waStatus = 'sent';
+  let warning: string | undefined;
+
+  if (!connection || !phone) {
+    waStatus = 'failed';
+    warning = 'Arquivo salvo no histórico, mas não há WhatsApp conectado para enviar.';
+  } else {
+    try {
+      const sendResult = await sendMediaMessage(
+        connection.instance_name,
+        phone,
+        messageType,
+        mimeType,
+        safeFileName,
+        base64,
+        trimmedCaption || undefined
+      );
+      externalMessageId = sendResult?.key?.id || null;
+    } catch (err) {
+      console.error('Erro ao enviar mídia pelo WhatsApp:', err);
+      waStatus = 'failed';
+      warning = 'Arquivo salvo, mas o WhatsApp não confirmou o envio.';
+    }
+  }
+
   const { error: messageError } = await supabase.from('messages').insert([
     {
       workspace_id: membership.workspace_id,
@@ -103,6 +142,8 @@ export async function POST(request: NextRequest) {
       media_url: mediaUrl,
       media_mime_type: mimeType,
       media_caption: trimmedCaption || null,
+      external_message_id: externalMessageId,
+      wa_status: waStatus,
     },
   ]);
 
@@ -118,39 +159,5 @@ export async function POST(request: NextRequest) {
     })
     .eq('id', conversationId);
 
-  const { data: connection } = await supabase
-    .from('whatsapp_connections')
-    .select('instance_name')
-    .eq('workspace_id', membership.workspace_id)
-    .eq('status', 'connected')
-    .maybeSingle();
-
-  const contact = Array.isArray(conversation.contact) ? conversation.contact[0] : conversation.contact;
-  const phone = contact?.phone;
-
-  if (!connection || !phone) {
-    return NextResponse.json({
-      sent: false,
-      warning: 'Arquivo salvo no histórico, mas não há WhatsApp conectado para enviar.',
-    });
-  }
-
-  try {
-    await sendMediaMessage(
-      connection.instance_name,
-      phone,
-      messageType,
-      mimeType,
-      safeFileName,
-      base64,
-      trimmedCaption || undefined
-    );
-    return NextResponse.json({ sent: true });
-  } catch (err) {
-    console.error('Erro ao enviar mídia pelo WhatsApp:', err);
-    return NextResponse.json({
-      sent: false,
-      warning: 'Arquivo salvo, mas o WhatsApp não confirmou o envio.',
-    });
-  }
+  return NextResponse.json(warning ? { sent: false, warning } : { sent: true });
 }

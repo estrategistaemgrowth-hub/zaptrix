@@ -2,13 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Upload, Trash2, FileText, BookOpen } from 'lucide-react';
+import { ensureWorkspace } from '@/lib/workspace';
+import { Upload, Trash2, FileText, BookOpen, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface KnowledgeEntry {
   id: string;
   title: string;
+  category: string | null;
   content: string;
-  source?: string;
+  active: boolean;
   created_at: string;
 }
 
@@ -16,38 +18,30 @@ export default function ConhecimentoPage() {
   const [entries, setEntries] = useState<KnowledgeEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
-  const [formData, setFormData] = useState({
-    title: '',
-    content: '',
-    source: '',
-  });
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [formData, setFormData] = useState({ title: '', category: '', content: '' });
   const [submitting, setSubmitting] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
-    loadEntries();
+    init();
   }, []);
 
-  async function loadEntries() {
+  async function init() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
 
-      const { data: workspace } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .single();
+      const workspace = await ensureWorkspace(supabase, session.user.id, session.user.email);
+      if (!workspace) {
+        setError('Não foi possível carregar seu workspace.');
+        setLoading(false);
+        return;
+      }
 
-      if (!workspace) return;
-
-      const { data } = await supabase
-        .from('knowledge_entries')
-        .select('*')
-        .eq('workspace_id', workspace.workspace_id)
-        .order('created_at', { ascending: false });
-
-      setEntries(data || []);
+      setWorkspaceId(workspace.workspaceId);
+      await loadEntries(workspace.workspaceId);
     } catch (err) {
       console.error('Erro ao carregar entradas:', err);
     } finally {
@@ -55,62 +49,84 @@ export default function ConhecimentoPage() {
     }
   }
 
+  async function loadEntries(wsId: string) {
+    const { data, error: loadError } = await supabase
+      .from('knowledge_entries')
+      .select('*')
+      .eq('workspace_id', wsId)
+      .order('created_at', { ascending: false });
+
+    if (loadError) {
+      setError('Erro ao carregar base de conhecimento: ' + loadError.message);
+      return;
+    }
+
+    setEntries(data || []);
+  }
+
   async function handleAddEntry(e: React.FormEvent) {
     e.preventDefault();
+    if (!workspaceId) return;
+
     setSubmitting(true);
+    setError('');
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
+    const { error: insertError } = await supabase.from('knowledge_entries').insert([
+      {
+        workspace_id: workspaceId,
+        title: formData.title,
+        category: formData.category || null,
+        content: formData.content,
+        active: true,
+      },
+    ]);
 
-      const { data: workspace } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .single();
-
-      if (!workspace) return;
-
-      await supabase
-        .from('knowledge_entries')
-        .insert([
-          {
-            workspace_id: workspace.workspace_id,
-            title: formData.title,
-            content: formData.content,
-            source: formData.source || null,
-          },
-        ]);
-
-      setFormData({ title: '', content: '', source: '' });
-      setShowForm(false);
-      loadEntries();
-    } catch (err) {
-      console.error('Erro:', err);
-      alert('Erro ao adicionar entrada de conhecimento');
-    } finally {
+    if (insertError) {
+      console.error('Erro ao criar entrada:', insertError);
+      setError('Erro ao adicionar: ' + insertError.message);
       setSubmitting(false);
+      return;
     }
+
+    setFormData({ title: '', category: '', content: '' });
+    setShowForm(false);
+    setSubmitting(false);
+    await loadEntries(workspaceId);
+  }
+
+  async function handleToggleActive(entry: KnowledgeEntry) {
+    if (!workspaceId) return;
+
+    const { error: updateError } = await supabase
+      .from('knowledge_entries')
+      .update({ active: !entry.active })
+      .eq('id', entry.id);
+
+    if (updateError) {
+      alert('Erro ao atualizar: ' + updateError.message);
+      return;
+    }
+    await loadEntries(workspaceId);
   }
 
   async function handleDeleteEntry(id: string) {
-    if (!confirm('Deletar esta entrada?')) return;
+    if (!workspaceId || !confirm('Deletar esta entrada?')) return;
 
-    try {
-      await supabase.from('knowledge_entries').delete().eq('id', id);
-      loadEntries();
-    } catch (err) {
-      console.error('Erro:', err);
+    const { error: deleteError } = await supabase.from('knowledge_entries').delete().eq('id', id);
+    if (deleteError) {
+      alert('Erro ao deletar: ' + deleteError.message);
+      return;
     }
+    await loadEntries(workspaceId);
   }
 
   return (
-    <div className="min-h-screen bg-background p-8">
+    <div className="p-2">
       <div className="max-w-6xl mx-auto">
         <div className="flex justify-between items-center mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Base de Conhecimento</h1>
-            <p className="text-muted-foreground">Documentação para treinar a IA</p>
+            <p className="text-muted-foreground">Conteúdo usado pela IA para responder clientes</p>
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
@@ -121,21 +137,42 @@ export default function ConhecimentoPage() {
           </button>
         </div>
 
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
         {showForm && (
-          <div className="bg-white border border-border rounded-lg p-6 mb-8">
+          <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
             <form onSubmit={handleAddEntry} className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Título *
-                </label>
-                <input
-                  type="text"
-                  value={formData.title}
-                  onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  required
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
-                  placeholder="ex: Guia de Produtos 2024"
-                />
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Título *
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    required
+                    className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                    placeholder="ex: Política de troca e devolução"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Categoria
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.category}
+                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                    className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                    placeholder="ex: Políticas, FAQ, Produtos"
+                  />
+                </div>
               </div>
 
               <div>
@@ -146,22 +183,9 @@ export default function ConhecimentoPage() {
                   value={formData.content}
                   onChange={(e) => setFormData({ ...formData, content: e.target.value })}
                   required
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground font-mono text-sm"
-                  placeholder="Cole o conteúdo da documentação aqui..."
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground font-mono text-sm"
+                  placeholder="Escreva o conteúdo que a IA vai usar para responder os clientes..."
                   rows={8}
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Fonte (opcional)
-                </label>
-                <input
-                  type="text"
-                  value={formData.source}
-                  onChange={(e) => setFormData({ ...formData, source: e.target.value })}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
-                  placeholder="ex: drive.google.com/..."
                 />
               </div>
 
@@ -190,17 +214,21 @@ export default function ConhecimentoPage() {
             <p className="text-muted-foreground">Carregando...</p>
           ) : entries.length === 0 ? (
             <div className="col-span-full">
-              <div className="bg-white border border-border rounded-lg p-12 text-center">
+              <div className="bg-card border border-border rounded-2xl shadow-sm p-12 text-center">
                 <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-4">Nenhuma entrada de conhecimento</p>
-                <p className="text-sm text-muted-foreground">Comece adicionando documentação para treinar a IA</p>
+                <p className="text-muted-foreground mb-1">Nenhuma entrada de conhecimento</p>
+                <p className="text-sm text-muted-foreground">
+                  Comece adicionando documentação para treinar a IA
+                </p>
               </div>
             </div>
           ) : (
             entries.map((entry) => (
               <div
                 key={entry.id}
-                className="bg-white border border-border rounded-lg p-6 hover:shadow-lg transition-shadow"
+                className={`bg-card border border-border rounded-2xl shadow-sm p-6 hover:shadow-lg transition-shadow ${
+                  !entry.active ? 'opacity-60' : ''
+                }`}
               >
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-start gap-3 flex-1">
@@ -209,25 +237,37 @@ export default function ConhecimentoPage() {
                       <h3 className="text-lg font-semibold text-foreground line-clamp-2">
                         {entry.title}
                       </h3>
-                      {entry.source && (
-                        <p className="text-xs text-muted-foreground truncate mt-1">Fonte: {entry.source}</p>
+                      {entry.category && (
+                        <p className="text-xs text-muted-foreground mt-1">{entry.category}</p>
                       )}
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleDeleteEntry(entry.id)}
-                    className="p-1 text-destructive hover:bg-destructive/10 rounded ml-2 flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => handleToggleActive(entry)}
+                      title={entry.active ? 'Desativar' : 'Ativar'}
+                      className="p-1 text-muted-foreground hover:text-primary"
+                    >
+                      {entry.active ? (
+                        <ToggleRight className="w-5 h-5 text-primary" />
+                      ) : (
+                        <ToggleLeft className="w-5 h-5" />
+                      )}
+                    </button>
+                    <button
+                      onClick={() => handleDeleteEntry(entry.id)}
+                      className="p-1 text-destructive hover:bg-destructive/10 rounded"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
 
-                <p className="text-sm text-muted-foreground line-clamp-3 mb-3">
-                  {entry.content}
-                </p>
+                <p className="text-sm text-muted-foreground line-clamp-3 mb-3">{entry.content}</p>
 
                 <p className="text-xs text-muted-foreground">
                   {new Date(entry.created_at).toLocaleDateString('pt-BR')}
+                  {!entry.active && ' · inativo (a IA ignora este conteúdo)'}
                 </p>
               </div>
             ))

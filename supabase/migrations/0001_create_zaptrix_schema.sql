@@ -503,5 +503,5 @@ CREATE POLICY "Owner/admin can update connections"
 -- ============================================================================
 
 COMMENT ON FUNCTION is_platform_admin() IS 'Check if current user is a platform admin (super admin)';
-COMMENT ON FUNCTION is_workspace_member() IS 'Check if current user is a member of a workspace with optional role filter';
+COMMENT ON FUNCTION is_workspace_member(uuid, text[]) IS 'Check if current user is a member of a workspace with optional role filter';
 COMMENT ON FUNCTION current_workspace_id() IS 'Get the current user primary workspace ID';

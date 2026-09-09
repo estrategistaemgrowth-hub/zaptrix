@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { ensureWorkspace } from '@/lib/workspace';
 import { MessageCircle, Users, MessageSquare, TrendingUp } from 'lucide-react';
 
 interface DashboardMetrics {
@@ -10,6 +11,52 @@ interface DashboardMetrics {
   messagesToday: number;
   totalMessages: number;
 }
+
+const cards = [
+  {
+    key: 'activeConversations' as const,
+    label: 'Conversas Abertas',
+    hint: 'em andamento',
+    icon: MessageCircle,
+    iconBg: 'bg-violet-100',
+    iconColor: 'text-violet-600',
+    valueColor: 'text-violet-600',
+  },
+  {
+    key: 'totalContacts' as const,
+    label: 'Total de Contatos',
+    hint: 'contatos únicos',
+    icon: Users,
+    iconBg: 'bg-emerald-100',
+    iconColor: 'text-emerald-600',
+    valueColor: 'text-emerald-600',
+  },
+  {
+    key: 'messagesToday' as const,
+    label: 'Mensagens Hoje',
+    hint: 'desde meia-noite',
+    icon: MessageSquare,
+    iconBg: 'bg-amber-100',
+    iconColor: 'text-amber-600',
+    valueColor: 'text-amber-600',
+  },
+  {
+    key: 'totalMessages' as const,
+    label: 'Total de Mensagens',
+    hint: 'no histórico',
+    icon: TrendingUp,
+    iconBg: 'bg-blue-100',
+    iconColor: 'text-blue-600',
+    valueColor: 'text-blue-600',
+  },
+];
+
+const steps = [
+  { n: 1, title: 'WhatsApp', desc: 'Conectar Evolution API' },
+  { n: 2, title: 'Produtos', desc: 'Cadastrar seu catálogo' },
+  { n: 3, title: 'Conhecimento', desc: 'Treinar a IA com docs' },
+  { n: 4, title: 'Atender', desc: 'Receber mensagens ao vivo' },
+];
 
 export default function DashboardPage() {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
@@ -22,53 +69,53 @@ export default function DashboardPage() {
   const supabase = createClient();
 
   useEffect(() => {
-    loadMetrics();
-    const interval = setInterval(loadMetrics, 5000); // Atualizar a cada 5s
-    return () => clearInterval(interval);
-  }, []);
+    let workspaceId: string | null = null;
+    let interval: ReturnType<typeof setInterval>;
 
-  async function loadMetrics() {
-    try {
+    async function start() {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
 
-      const { data: workspace } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .single();
+      const workspace = await ensureWorkspace(supabase, session.user.id, session.user.email);
+      if (!workspace) {
+        setLoading(false);
+        return;
+      }
 
-      if (!workspace) return;
+      workspaceId = workspace.workspaceId;
+      await loadMetrics(workspaceId);
+      interval = setInterval(() => workspaceId && loadMetrics(workspaceId), 5000);
+    }
 
-      const workspaceId = workspace.workspace_id;
+    start();
+    return () => clearInterval(interval);
+  }, []);
 
-      // Conversas ativas
+  async function loadMetrics(workspaceId: string) {
+    try {
       const { count: activeCount } = await supabase
         .from('conversations')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
-        .eq('status', 'active');
+        .eq('status', 'open');
 
-      // Total de contatos
       const { count: contactCount } = await supabase
         .from('contacts')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId);
 
-      // Mensagens de hoje
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
       const { count: todayCount } = await supabase
         .from('messages')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId)
         .gte('created_at', today.toISOString());
 
-      // Total de mensagens
       const { count: totalCount } = await supabase
         .from('messages')
-        .select('*', { count: 'exact' })
+        .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId);
 
       setMetrics({
@@ -85,110 +132,55 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-8">
-      <div className="max-w-7xl mx-auto">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-foreground mb-2">Dashboard</h1>
-          <p className="text-muted-foreground">
-            Bem-vindo ao Zaptrix — automação de vendas com IA via WhatsApp
-          </p>
-        </div>
+    <div className="p-2">
+      <div className="mb-6">
+        <h1 className="text-3xl font-bold text-foreground mb-1">Dashboard</h1>
+        <p className="text-muted-foreground">
+          Bem-vindo ao Zaptrix — automação de vendas com IA via WhatsApp
+        </p>
+      </div>
 
-        {/* Cards de Métricas */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-          <div className="bg-white border border-border rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Conversas Ativas</h3>
-              <MessageCircle className="w-5 h-5 text-primary" />
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          return (
+            <div
+              key={card.key}
+              className="bg-card border border-border rounded-2xl shadow-sm p-6"
+            >
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-sm font-medium text-muted-foreground">{card.label}</h3>
+                <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${card.iconBg}`}>
+                  <Icon className={`w-4 h-4 ${card.iconColor}`} />
+                </div>
+              </div>
+              <p className={`text-3xl font-bold ${card.valueColor}`}>
+                {loading ? '—' : metrics[card.key]}
+              </p>
+              <p className="text-xs text-muted-foreground mt-2">{card.hint}</p>
             </div>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? '—' : metrics.activeConversations}
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">em andamento</p>
-          </div>
+          );
+        })}
+      </div>
 
-          <div className="bg-white border border-border rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Total de Contatos</h3>
-              <Users className="w-5 h-5 text-primary" />
-            </div>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? '—' : metrics.totalContacts}
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">contatos únicos</p>
-          </div>
+      <div className="bg-card border border-border rounded-2xl shadow-sm p-8">
+        <h2 className="text-lg font-semibold text-foreground mb-2">Comece sua jornada</h2>
+        <p className="text-muted-foreground mb-6">
+          Siga os passos abaixo para configurar seu agente de vendas
+        </p>
 
-          <div className="bg-white border border-border rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Mensagens Hoje</h3>
-              <MessageSquare className="w-5 h-5 text-primary" />
-            </div>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? '—' : metrics.messagesToday}
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">desde meia-noite</p>
-          </div>
-
-          <div className="bg-white border border-border rounded-lg p-6">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="text-sm font-medium text-muted-foreground">Total de Mensagens</h3>
-              <TrendingUp className="w-5 h-5 text-primary" />
-            </div>
-            <p className="text-3xl font-bold text-foreground">
-              {loading ? '—' : metrics.totalMessages}
-            </p>
-            <p className="text-xs text-muted-foreground mt-2">no histórico</p>
-          </div>
-        </div>
-
-        {/* Seção de Onboarding */}
-        <div className="bg-white border border-border rounded-lg p-8">
-          <h2 className="text-lg font-semibold text-foreground mb-2">Comece sua jornada</h2>
-          <p className="text-muted-foreground mb-6">
-            Siga os passos abaixo para configurar seu agente de vendas
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="p-4 bg-gray-50 rounded-lg border border-border">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          {steps.map((step) => (
+            <div key={step.n} className="p-4 bg-muted rounded-xl">
               <div className="flex items-center gap-3 mb-2">
                 <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">
-                  1
+                  {step.n}
                 </div>
-                <h3 className="font-semibold text-foreground">WhatsApp</h3>
+                <h3 className="font-semibold text-foreground">{step.title}</h3>
               </div>
-              <p className="text-sm text-muted-foreground">Conectar Evolution API</p>
+              <p className="text-sm text-muted-foreground">{step.desc}</p>
             </div>
-
-            <div className="p-4 bg-gray-50 rounded-lg border border-border">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">
-                  2
-                </div>
-                <h3 className="font-semibold text-foreground">Produtos</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">Cadastrar seu catálogo</p>
-            </div>
-
-            <div className="p-4 bg-gray-50 rounded-lg border border-border">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">
-                  3
-                </div>
-                <h3 className="font-semibold text-foreground">Conhecimento</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">Treinar a IA com docs</p>
-            </div>
-
-            <div className="p-4 bg-gray-50 rounded-lg border border-border">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">
-                  4
-                </div>
-                <h3 className="font-semibold text-foreground">Atender</h3>
-              </div>
-              <p className="text-sm text-muted-foreground">Receber mensagens ao vivo</p>
-            </div>
-          </div>
+          ))}
         </div>
       </div>
     </div>

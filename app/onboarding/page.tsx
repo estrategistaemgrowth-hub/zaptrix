@@ -1,9 +1,51 @@
 'use client';
 
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createClient } from '@/lib/supabase/client';
+import { ensureWorkspace } from '@/lib/workspace';
+import { Loader2 } from 'lucide-react';
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const supabase = createClient();
+  const [companyName, setCompanyName] = useState('');
+  const [starting, setStarting] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleStart() {
+    setStarting(true);
+    setError('');
+
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) {
+        router.push('/login');
+        return;
+      }
+
+      const workspace = await ensureWorkspace(supabase, session.user.id, session.user.email);
+
+      if (!workspace) {
+        setError('Não foi possível configurar seu workspace. Tente novamente.');
+        setStarting(false);
+        return;
+      }
+
+      if (companyName.trim()) {
+        await supabase
+          .from('workspaces')
+          .update({ name: companyName.trim() })
+          .eq('id', workspace.workspaceId);
+      }
+
+      router.push('/dashboard');
+    } catch (err) {
+      console.error('Erro no onboarding:', err);
+      setError('Ocorreu um erro inesperado. Tente novamente.');
+      setStarting(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-8">
@@ -14,15 +56,22 @@ export default function OnboardingPage() {
 
           <div className="space-y-6">
             <div className="bg-muted/50 rounded-lg p-6 text-left">
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-4 mb-4">
                 <div className="flex-shrink-0 w-8 h-8 bg-primary text-primary-foreground rounded-full flex items-center justify-center font-bold">
                   1
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground">Dados da empresa</h3>
-                  <p className="text-sm text-muted-foreground">Nome, segmento, site</p>
+                  <p className="text-sm text-muted-foreground">Como sua empresa se chama?</p>
                 </div>
               </div>
+              <input
+                type="text"
+                value={companyName}
+                onChange={(e) => setCompanyName(e.target.value)}
+                placeholder="ex: Loja da Ana"
+                className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
+              />
             </div>
 
             <div className="bg-muted/50 rounded-lg p-6 text-left opacity-50">
@@ -74,11 +123,17 @@ export default function OnboardingPage() {
             </div>
           </div>
 
+          {error && (
+            <p className="mt-6 text-sm text-destructive">{error}</p>
+          )}
+
           <button
-            onClick={() => router.push('/dashboard')}
-            className="mt-12 px-8 py-3 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 cursor-pointer"
+            onClick={handleStart}
+            disabled={starting}
+            className="mt-12 px-8 py-3 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 cursor-pointer disabled:opacity-50 inline-flex items-center gap-2"
           >
-            Começar agora
+            {starting && <Loader2 className="w-4 h-4 animate-spin" />}
+            {starting ? 'Configurando...' : 'Começar agora'}
           </button>
         </div>
       </div>

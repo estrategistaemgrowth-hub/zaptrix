@@ -11,21 +11,21 @@
   --tertiary: #d2a5ff;
 
   /* Surfaces */
-  --background: #ffffff;
-  --foreground: #000000;
+  --background: #f1f0f7;
+  --foreground: #1a1523;
   --card: #ffffff;
-  --card-foreground: #000000;
+  --card-foreground: #1a1523;
   --popover: #ffffff;
-  --popover-foreground: #000000;
-  --muted: #ffffff;
-  --muted-foreground: #777777;
+  --popover-foreground: #1a1523;
+  --muted: #f5f4fa;
+  --muted-foreground: #767085;
 
   /* States */
   --accent: #820ad1;
   --accent-foreground: #ffffff;
   --destructive: #d01d1c;
   --destructive-foreground: #ffffff;
-  --border: #e4e4e4;
+  --border: #e8e6f0;
   --input: #ffffff;
   --ring: #820ad1;
 
@@ -68,13 +68,13 @@
 }
 
 [data-theme="light"] {
-  --background: #ffffff;
-  --foreground: #000000;
+  --background: #f1f0f7;
+  --foreground: #1a1523;
   --card: #ffffff;
-  --card-foreground: #000000;
-  --muted: #ffffff;
-  --muted-foreground: #777777;
-  --border: #e4e4e4;
+  --card-foreground: #1a1523;
+  --muted: #f5f4fa;
+  --muted-foreground: #767085;
+  --border: #e8e6f0;
   --input: #ffffff;
 }
 
@@ -87,6 +87,43 @@
   --muted-foreground: #bfbfbf;
   --border: #ffffff1a;
   --input: #080808;
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-tertiary: var(--tertiary);
+
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: 12px;
+  --radius-md: 24px;
+  --radius-lg: 32px;
+  --radius-xl: 48px;
 }
 
 * {

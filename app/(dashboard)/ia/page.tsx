@@ -2,67 +2,88 @@
 
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Save, Zap, Settings2 } from 'lucide-react';
+import { ensureWorkspace } from '@/lib/workspace';
+import { Save, Zap, ToggleLeft, ToggleRight } from 'lucide-react';
 
 interface AIProfile {
   id: string;
-  name: string;
-  description: string;
-  personality: string;
-  greeting: string;
-  language_model: string;
-  temperature: number;
-  max_tokens: number;
+  agent_name: string | null;
+  company_name: string | null;
+  objective: string | null;
+  persona: string | null;
+  tone: string | null;
+  custom_tone: string | null;
+  response_style: string | null;
+  allowed_topics: string | null;
+  forbidden_topics: string | null;
+  business_rules: string | null;
+  enabled: boolean;
 }
+
+const emptyForm = {
+  agent_name: '',
+  company_name: '',
+  objective: '',
+  persona: '',
+  tone: 'amigavel',
+  custom_tone: '',
+  response_style: 'conciso',
+  allowed_topics: '',
+  forbidden_topics: '',
+  business_rules: '',
+  enabled: true,
+};
 
 export default function IaPage() {
   const [profile, setProfile] = useState<AIProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [formData, setFormData] = useState({
-    name: 'Assistente Zaptrix',
-    description: 'Agente de atendimento e vendas automático',
-    personality: 'Profissional, educado e prestativo',
-    greeting: 'Olá! Como posso ajudar você hoje?',
-    language_model: 'gpt-4-turbo',
-    temperature: 0.7,
-    max_tokens: 2048,
-  });
+  const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [error, setError] = useState('');
+  const [saved, setSaved] = useState(false);
+  const [formData, setFormData] = useState(emptyForm);
   const supabase = createClient();
 
   useEffect(() => {
-    loadProfile();
+    init();
   }, []);
 
-  async function loadProfile() {
+  async function init() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
       if (!session?.user) return;
 
-      const { data: workspace } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .single();
+      const workspace = await ensureWorkspace(supabase, session.user.id, session.user.email);
+      if (!workspace) {
+        setError('Não foi possível carregar seu workspace.');
+        setLoading(false);
+        return;
+      }
 
-      if (!workspace) return;
+      setWorkspaceId(workspace.workspaceId);
 
-      const { data } = await supabase
+      const { data, error: loadError } = await supabase
         .from('ai_profiles')
         .select('*')
-        .eq('workspace_id', workspace.workspace_id)
-        .single();
+        .eq('workspace_id', workspace.workspaceId)
+        .maybeSingle();
 
-      if (data) {
+      if (loadError) {
+        setError('Erro ao carregar perfil de IA: ' + loadError.message);
+      } else if (data) {
         setProfile(data);
         setFormData({
-          name: data.name,
-          description: data.description,
-          personality: data.personality,
-          greeting: data.greeting,
-          language_model: data.language_model,
-          temperature: data.temperature,
-          max_tokens: data.max_tokens,
+          agent_name: data.agent_name || '',
+          company_name: data.company_name || '',
+          objective: data.objective || '',
+          persona: data.persona || '',
+          tone: data.tone || 'amigavel',
+          custom_tone: data.custom_tone || '',
+          response_style: data.response_style || 'conciso',
+          allowed_topics: data.allowed_topics || '',
+          forbidden_topics: data.forbidden_topics || '',
+          business_rules: data.business_rules || '',
+          enabled: data.enabled,
         });
       }
     } catch (err) {
@@ -74,49 +95,33 @@ export default function IaPage() {
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
+    if (!workspaceId) return;
+
     setSaving(true);
+    setError('');
+    setSaved(false);
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.user) return;
+    const payload = { workspace_id: workspaceId, ...formData };
 
-      const { data: workspace } = await supabase
-        .from('workspace_members')
-        .select('workspace_id')
-        .eq('user_id', session.user.id)
-        .single();
+    const { error: saveError } = profile
+      ? await supabase.from('ai_profiles').update(payload).eq('id', profile.id)
+      : await supabase.from('ai_profiles').insert([payload]);
 
-      if (!workspace) return;
-
-      if (profile) {
-        await supabase
-          .from('ai_profiles')
-          .update(formData)
-          .eq('id', profile.id);
-      } else {
-        await supabase
-          .from('ai_profiles')
-          .insert([
-            {
-              workspace_id: workspace.workspace_id,
-              ...formData,
-            },
-          ]);
-      }
-
-      alert('Perfil de IA salvo com sucesso!');
-      loadProfile();
-    } catch (err) {
-      console.error('Erro:', err);
-      alert('Erro ao salvar perfil de IA');
-    } finally {
+    if (saveError) {
+      console.error('Erro ao salvar perfil de IA:', saveError);
+      setError('Erro ao salvar: ' + saveError.message);
       setSaving(false);
+      return;
     }
+
+    setSaved(true);
+    setSaving(false);
+    await init();
   }
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background p-8">
+      <div className="p-2">
         <div className="max-w-4xl mx-auto">
           <p className="text-muted-foreground">Carregando...</p>
         </div>
@@ -125,123 +130,185 @@ export default function IaPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background p-8">
+    <div className="p-2">
       <div className="max-w-4xl mx-auto">
-        <div className="flex items-center gap-3 mb-8">
-          <Zap className="w-8 h-8 text-primary" />
-          <div>
-            <h1 className="text-3xl font-bold text-foreground">Configuração da IA</h1>
-            <p className="text-muted-foreground">Personalize seu agente de atendimento</p>
+        <div className="flex items-center justify-between mb-8">
+          <div className="flex items-center gap-3">
+            <Zap className="w-8 h-8 text-primary" />
+            <div>
+              <h1 className="text-3xl font-bold text-foreground">Configuração da IA</h1>
+              <p className="text-muted-foreground">Personalize seu agente de atendimento</p>
+            </div>
           </div>
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
+            className="flex items-center gap-2 text-sm font-medium text-foreground"
+          >
+            {formData.enabled ? (
+              <ToggleRight className="w-8 h-8 text-primary" />
+            ) : (
+              <ToggleLeft className="w-8 h-8 text-muted-foreground" />
+            )}
+            {formData.enabled ? 'IA ativa' : 'IA desativada'}
+          </button>
         </div>
 
-        <div className="bg-white border border-border rounded-lg p-8">
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+            {error}
+          </div>
+        )}
+
+        {saved && (
+          <div className="mb-6 p-4 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700">
+            Perfil de IA salvo com sucesso!
+          </div>
+        )}
+
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-8">
           <form onSubmit={handleSave} className="space-y-6">
             <div className="grid grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Nome da IA
+                  Nome do agente
                 </label>
                 <input
                   type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
-                  placeholder="ex: Assistente Zaptrix"
+                  value={formData.agent_name}
+                  onChange={(e) => setFormData({ ...formData, agent_name: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="ex: Ana"
                 />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Modelo de Linguagem
+                  Nome da empresa
+                </label>
+                <input
+                  type="text"
+                  value={formData.company_name}
+                  onChange={(e) => setFormData({ ...formData, company_name: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="ex: Loja da Ana"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Objetivo do agente
+              </label>
+              <textarea
+                value={formData.objective}
+                onChange={(e) => setFormData({ ...formData, objective: e.target.value })}
+                className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                placeholder="ex: Tirar dúvidas sobre produtos e ajudar o cliente a fechar a compra"
+                rows={2}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">Persona</label>
+              <textarea
+                value={formData.persona}
+                onChange={(e) => setFormData({ ...formData, persona: e.target.value })}
+                className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                placeholder="ex: Vendedora experiente, atenciosa, que conhece bem o catálogo"
+                rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">Tom de voz</label>
+                <select
+                  value={formData.tone}
+                  onChange={(e) => setFormData({ ...formData, tone: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                >
+                  <option value="amigavel">Amigável</option>
+                  <option value="formal">Formal</option>
+                  <option value="descontraido">Descontraído</option>
+                  <option value="profissional">Profissional</option>
+                  <option value="personalizado">Personalizado</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Estilo de resposta
                 </label>
                 <select
-                  value={formData.language_model}
-                  onChange={(e) => setFormData({ ...formData, language_model: e.target.value })}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
+                  value={formData.response_style}
+                  onChange={(e) => setFormData({ ...formData, response_style: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
                 >
-                  <option value="gpt-4-turbo">GPT-4 Turbo</option>
-                  <option value="gpt-3.5-turbo">GPT-3.5 Turbo</option>
-                  <option value="claude-3-opus">Claude 3 Opus</option>
-                  <option value="claude-3-sonnet">Claude 3 Sonnet</option>
+                  <option value="conciso">Conciso (respostas curtas)</option>
+                  <option value="detalhado">Detalhado</option>
+                  <option value="conversacional">Conversacional</option>
                 </select>
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Descrição
-              </label>
-              <textarea
-                value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-                className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
-                placeholder="Descrição do agente de IA"
-                rows={2}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Personalidade
-              </label>
-              <textarea
-                value={formData.personality}
-                onChange={(e) => setFormData({ ...formData, personality: e.target.value })}
-                className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
-                placeholder="ex: Profissional, educado e prestativo"
-                rows={2}
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-foreground mb-2">
-                Mensagem de Boas-vindas
-              </label>
-              <input
-                type="text"
-                value={formData.greeting}
-                onChange={(e) => setFormData({ ...formData, greeting: e.target.value })}
-                className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
-                placeholder="Mensagem inicial da IA"
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-6 p-4 bg-gray-50 rounded-lg">
+            {formData.tone === 'personalizado' && (
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Temperatura (0-1)
+                  Descreva o tom personalizado
                 </label>
                 <input
-                  type="number"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={formData.temperature}
-                  onChange={(e) => setFormData({ ...formData, temperature: parseFloat(e.target.value) })}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
+                  type="text"
+                  value={formData.custom_tone}
+                  onChange={(e) => setFormData({ ...formData, custom_tone: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="ex: Bem-humorado, usa gírias regionais"
                 />
-                <p className="text-xs text-muted-foreground mt-1">Mais alta = mais criativa</p>
+              </div>
+            )}
+
+            <div className="grid grid-cols-2 gap-6">
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Tópicos permitidos
+                </label>
+                <textarea
+                  value={formData.allowed_topics}
+                  onChange={(e) => setFormData({ ...formData, allowed_topics: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="ex: produtos, preços, entrega, trocas"
+                  rows={2}
+                />
               </div>
 
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Tokens Máximos
+                  Tópicos proibidos
                 </label>
-                <input
-                  type="number"
-                  min="256"
-                  max="4096"
-                  step="256"
-                  value={formData.max_tokens}
-                  onChange={(e) => setFormData({ ...formData, max_tokens: parseInt(e.target.value) })}
-                  className="w-full px-4 py-2 border border-border rounded-lg bg-white text-foreground"
+                <textarea
+                  value={formData.forbidden_topics}
+                  onChange={(e) => setFormData({ ...formData, forbidden_topics: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="ex: política, concorrentes, assuntos pessoais"
+                  rows={2}
                 />
-                <p className="text-xs text-muted-foreground mt-1">Tamanho máximo da resposta</p>
               </div>
             </div>
 
-            <div className="flex gap-3 pt-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Regras de negócio
+              </label>
+              <textarea
+                value={formData.business_rules}
+                onChange={(e) => setFormData({ ...formData, business_rules: e.target.value })}
+                className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                placeholder="ex: Nunca dar desconto acima de 10% sem aprovação humana. Prazo de entrega é sempre 5 dias úteis."
+                rows={3}
+              />
+            </div>
+
+            <div className="flex gap-3 pt-4 border-t border-border">
               <button
                 type="submit"
                 disabled={saving}
@@ -254,16 +321,13 @@ export default function IaPage() {
           </form>
         </div>
 
-        <div className="bg-white border border-border rounded-lg p-6 mt-8">
-          <div className="flex items-center gap-3 mb-4">
-            <Settings2 className="w-5 h-5 text-primary" />
-            <h3 className="text-lg font-semibold text-foreground">Próximas Etapas</h3>
-          </div>
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mt-8">
+          <h3 className="text-lg font-semibold text-foreground mb-4">Próximas Etapas</h3>
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li>→ Adicione documentação na seção Base de Conhecimento</li>
             <li>→ Configure as credenciais LLM nas Configurações</li>
             <li>→ Conecte sua conta WhatsApp via Evolution API</li>
-            <li>→ Teste o agente em uma conversa de teste</li>
+            <li>→ Em cada conversa no Atendimento, você pode ligar/desligar a IA individualmente</li>
           </ul>
         </div>
       </div>

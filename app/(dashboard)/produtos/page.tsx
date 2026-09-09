@@ -1,9 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { Plus, Trash2, Tag } from 'lucide-react';
+import { readFileAsText, parseProductsCsv, ImportResult } from '@/lib/csv-import';
+import { ProductDetailModal } from '@/components/product-detail-modal';
+import { SkeletonCard, Skeleton } from '@/components/skeleton';
+import { Plus, Trash2, Tag, Upload, FileSpreadsheet, X, Loader2, Search, SlidersHorizontal, ExternalLink, LayoutGrid, List, PackageSearch } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -16,8 +19,13 @@ interface Product {
   tags: string[] | null;
   purchase_url: string | null;
   image_url: string | null;
+  stock_quantity: number | null;
+  variant_size: string | null;
+  variant_color: string | null;
   active: boolean;
 }
+
+const BATCH_SIZE = 200;
 
 export default function ProdutosPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -35,9 +43,68 @@ export default function ProdutosPage() {
     tagsInput: '',
     purchase_url: '',
     image_url: '',
+    variant_size: '',
+    variant_color: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [importPreview, setImportPreview] = useState<{ result: ImportResult; fileName: string } | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [stockFilter, setStockFilter] = useState<'all' | 'in_stock' | 'out_of_stock'>('all');
+  const [priceMin, setPriceMin] = useState('');
+  const [priceMax, setPriceMax] = useState('');
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [importProgress, setImportProgress] = useState(0);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [newVariantType, setNewVariantType] = useState<'none' | 'simple_size' | 'simple_color' | 'composite'>('none');
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
+
+  const allCategories = Array.from(
+    new Set(products.map((p) => p.category).filter((c): c is string => !!c))
+  ).sort();
+  const allTags = Array.from(new Set(products.flatMap((p) => p.tags || []))).sort();
+
+  const filteredProducts = products.filter((p) => {
+    const term = searchTerm.toLowerCase();
+    if (term && !p.name.toLowerCase().includes(term) && !(p.sku || '').toLowerCase().includes(term)) {
+      return false;
+    }
+    if (categoryFilter && p.category !== categoryFilter) return false;
+    if (stockFilter === 'in_stock' && !(p.stock_quantity && p.stock_quantity > 0)) return false;
+    if (stockFilter === 'out_of_stock' && !(p.stock_quantity !== null && p.stock_quantity <= 0)) {
+      return false;
+    }
+    const effectivePrice = p.promotional_price ?? p.price;
+    if (priceMin && effectivePrice < parseFloat(priceMin)) return false;
+    if (priceMax && effectivePrice > parseFloat(priceMax)) return false;
+    if (selectedTags.length > 0 && !selectedTags.every((tag) => (p.tags || []).includes(tag))) {
+      return false;
+    }
+    return true;
+  });
+
+  function toggleTagFilter(tag: string) {
+    setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
+  function clearFilters() {
+    setCategoryFilter('');
+    setStockFilter('all');
+    setPriceMin('');
+    setPriceMax('');
+    setSelectedTags([]);
+  }
+
+  const activeFilterCount =
+    (categoryFilter ? 1 : 0) +
+    (stockFilter !== 'all' ? 1 : 0) +
+    (priceMin ? 1 : 0) +
+    (priceMax ? 1 : 0) +
+    selectedTags.length;
 
   useEffect(() => {
     init();
@@ -105,6 +172,14 @@ export default function ProdutosPage() {
         tags,
         purchase_url: formData.purchase_url || null,
         image_url: formData.image_url || null,
+        variant_size:
+          newVariantType === 'simple_size' || newVariantType === 'composite'
+            ? formData.variant_size || null
+            : null,
+        variant_color:
+          newVariantType === 'simple_color' || newVariantType === 'composite'
+            ? formData.variant_color || null
+            : null,
         active: true,
       },
     ]);
@@ -126,7 +201,10 @@ export default function ProdutosPage() {
       tagsInput: '',
       purchase_url: '',
       image_url: '',
+      variant_size: '',
+      variant_color: '',
     });
+    setNewVariantType('none');
     setShowForm(false);
     setSubmitting(false);
     await loadProducts(workspaceId);
@@ -143,6 +221,99 @@ export default function ProdutosPage() {
     await loadProducts(workspaceId);
   }
 
+  async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setError('');
+
+    try {
+      const text = await readFileAsText(file);
+      const result = parseProductsCsv(text);
+
+      if (result.products.length === 0) {
+        setError(
+          'Nenhum produto reconhecido na planilha. Verifique se ela tem colunas de nome e preço.'
+        );
+        return;
+      }
+
+      setImportPreview({ result, fileName: file.name });
+    } catch (err) {
+      console.error('Erro ao ler planilha:', err);
+      setError('Erro ao ler a planilha. Verifique se é um arquivo .csv válido.');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  async function handleConfirmImport() {
+    if (!workspaceId || !importPreview) return;
+
+    setImporting(true);
+    setImportProgress(0);
+    setError('');
+
+    const { products: parsedProducts, totalRows, skippedRows } = importPreview.result;
+
+    const { data: importRecord, error: importCreateError } = await supabase
+      .from('product_imports')
+      .insert([
+        {
+          workspace_id: workspaceId,
+          filename: importPreview.fileName,
+          status: 'processing',
+          total_rows: totalRows,
+        },
+      ])
+      .select('id')
+      .single();
+
+    if (importCreateError) {
+      setError('Erro ao registrar importação: ' + importCreateError.message);
+      setImporting(false);
+      return;
+    }
+
+    let createdCount = 0;
+    let errorCount = 0;
+
+    for (let i = 0; i < parsedProducts.length; i += BATCH_SIZE) {
+      const batch = parsedProducts.slice(i, i + BATCH_SIZE).map((p) => ({
+        workspace_id: workspaceId,
+        ...p,
+      }));
+
+      const { error: batchError, count } = await supabase
+        .from('products')
+        .insert(batch, { count: 'exact' });
+
+      if (batchError) {
+        console.error('Erro ao importar lote:', batchError);
+        errorCount += batch.length;
+      } else {
+        createdCount += count ?? batch.length;
+      }
+
+      setImportProgress(Math.min(i + BATCH_SIZE, parsedProducts.length));
+    }
+
+    await supabase
+      .from('product_imports')
+      .update({
+        status: 'completed',
+        created_count: createdCount,
+        updated_count: 0,
+        error_count: errorCount + skippedRows,
+        finished_at: new Date().toISOString(),
+      })
+      .eq('id', importRecord.id);
+
+    setImporting(false);
+    setImportPreview(null);
+    await loadProducts(workspaceId);
+  }
+
   return (
     <div className="p-2">
       <div className="max-w-6xl mx-auto">
@@ -151,13 +322,53 @@ export default function ProdutosPage() {
             <h1 className="text-3xl font-bold text-foreground">Produtos</h1>
             <p className="text-muted-foreground">Catálogo de produtos para recomendações</p>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90"
-          >
-            <Plus className="w-4 h-4" />
-            Novo produto
-          </button>
+          <div className="flex gap-3">
+            <div className="flex items-center border border-border rounded-lg overflow-hidden">
+              <button
+                onClick={() => setViewMode('grid')}
+                title="Ver em cards"
+                className={`p-2.5 ${
+                  viewMode === 'grid'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <LayoutGrid className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                title="Ver em lista"
+                className={`p-2.5 ${
+                  viewMode === 'list'
+                    ? 'bg-primary text-white'
+                    : 'bg-white text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <List className="w-4 h-4" />
+              </button>
+            </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".csv"
+              onChange={handleFileSelected}
+              className="hidden"
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="flex items-center gap-2 px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-muted"
+            >
+              <Upload className="w-4 h-4" />
+              Importar planilha
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="gradient-brand flex items-center gap-2 px-6 py-2 text-white rounded-lg font-medium shadow-sm transition-all duration-200 hover:shadow-md hover:opacity-95"
+            >
+              <Plus className="w-4 h-4" />
+              Novo produto
+            </button>
+          </div>
         </div>
 
         {error && (
@@ -165,6 +376,204 @@ export default function ProdutosPage() {
             {error}
           </div>
         )}
+
+        {importPreview && (
+          <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <FileSpreadsheet className="w-6 h-6 text-primary" />
+                <div>
+                  <h2 className="text-xl font-semibold text-foreground">
+                    Importar "{importPreview.fileName}"
+                  </h2>
+                  <p className="text-sm text-muted-foreground">
+                    {importPreview.result.products.length} produtos reconhecidos
+                    {importPreview.result.skippedRows > 0 &&
+                      ` · ${importPreview.result.skippedRows} linhas ignoradas (sem nome ou preço)`}
+                  </p>
+                </div>
+              </div>
+              {!importing && (
+                <button
+                  onClick={() => setImportPreview(null)}
+                  className="p-2 text-muted-foreground hover:text-foreground"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              )}
+            </div>
+
+            <div className="overflow-x-auto border border-border rounded-xl mb-4">
+              <table className="w-full text-sm">
+                <thead className="bg-muted">
+                  <tr>
+                    <th className="px-4 py-2 text-left font-semibold text-foreground">Nome</th>
+                    <th className="px-4 py-2 text-left font-semibold text-foreground">Categoria</th>
+                    <th className="px-4 py-2 text-left font-semibold text-foreground">Preço</th>
+                    <th className="px-4 py-2 text-left font-semibold text-foreground">Estoque</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {importPreview.result.products.slice(0, 8).map((p, i) => (
+                    <tr key={i}>
+                      <td className="px-4 py-2 text-foreground line-clamp-1 max-w-xs">{p.name}</td>
+                      <td className="px-4 py-2 text-muted-foreground">{p.category || '—'}</td>
+                      <td className="px-4 py-2 text-foreground">R$ {p.price.toFixed(2)}</td>
+                      <td className="px-4 py-2 text-muted-foreground">
+                        {p.stock_quantity ?? '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              {importPreview.result.products.length > 8 && (
+                <p className="text-xs text-muted-foreground p-3 bg-muted">
+                  + {importPreview.result.products.length - 8} produtos não exibidos no preview
+                </p>
+              )}
+            </div>
+
+            {importing ? (
+              <div className="flex items-center gap-3 text-sm text-muted-foreground">
+                <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                Importando {importProgress} de {importPreview.result.products.length}...
+              </div>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  onClick={handleConfirmImport}
+                  className="px-6 py-2 btn-gradient font-medium"
+                >
+                  Confirmar importação
+                </button>
+                <button
+                  onClick={() => setImportPreview(null)}
+                  className="px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-background"
+                >
+                  Cancelar
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-6">
+          <div className="flex items-center gap-3">
+            <Search className="w-5 h-5 text-muted-foreground" />
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Buscar por nome ou SKU..."
+              className="flex-1 text-foreground placeholder-muted-foreground outline-none"
+            />
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border ${
+                showFilters || activeFilterCount > 0
+                  ? 'bg-primary/10 text-primary border-primary/20'
+                  : 'border-border text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filtros
+              {activeFilterCount > 0 && (
+                <span className="w-5 h-5 flex items-center justify-center bg-primary text-white rounded-full text-xs">
+                  {activeFilterCount}
+                </span>
+              )}
+            </button>
+          </div>
+
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-border space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                {allCategories.length > 0 && (
+                  <div>
+                    <p className="text-xs font-semibold text-muted-foreground mb-2">Categoria</p>
+                    <select
+                      value={categoryFilter}
+                      onChange={(e) => setCategoryFilter(e.target.value)}
+                      className="w-full px-3 py-2 border border-border rounded-lg bg-white text-sm text-foreground"
+                    >
+                      <option value="">Todas</option>
+                      {allCategories.map((cat) => (
+                        <option key={cat} value={cat}>
+                          {cat}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">Estoque</p>
+                  <select
+                    value={stockFilter}
+                    onChange={(e) => setStockFilter(e.target.value as typeof stockFilter)}
+                    className="w-full px-3 py-2 border border-border rounded-lg bg-white text-sm text-foreground"
+                  >
+                    <option value="all">Todos</option>
+                    <option value="in_stock">Com estoque</option>
+                    <option value="out_of_stock">Sem estoque</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Faixa de preço</p>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="number"
+                    value={priceMin}
+                    onChange={(e) => setPriceMin(e.target.value)}
+                    placeholder="Mín"
+                    className="w-32 px-3 py-2 border border-border rounded-lg bg-white text-sm text-foreground"
+                  />
+                  <span className="text-muted-foreground">até</span>
+                  <input
+                    type="number"
+                    value={priceMax}
+                    onChange={(e) => setPriceMax(e.target.value)}
+                    placeholder="Máx"
+                    className="w-32 px-3 py-2 border border-border rounded-lg bg-white text-sm text-foreground"
+                  />
+                </div>
+              </div>
+
+              {allTags.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">Tags</p>
+                  <div className="flex flex-wrap gap-2">
+                    {allTags.map((tag) => (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTagFilter(tag)}
+                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border ${
+                          selectedTags.includes(tag)
+                            ? 'bg-primary text-white border-primary'
+                            : 'border-border text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        <Tag className="w-3 h-3" />
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {activeFilterCount > 0 && (
+                <button
+                  onClick={clearFilters}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Limpar filtros
+                </button>
+              )}
+            </div>
+          )}
+        </div>
 
         {showForm && (
           <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
@@ -273,6 +682,86 @@ export default function ProdutosPage() {
                     placeholder="https://..."
                   />
                 </div>
+
+              </div>
+
+              <div>
+                <p className="text-sm font-medium text-foreground mb-2">Este produto tem variação?</p>
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                  <button
+                    type="button"
+                    onClick={() => setNewVariantType('none')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border ${
+                      newVariantType === 'none'
+                        ? 'bg-primary text-white border-primary'
+                        : 'border-border text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Não tem
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewVariantType('simple_size')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border ${
+                      newVariantType === 'simple_size'
+                        ? 'bg-primary text-white border-primary'
+                        : 'border-border text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Simples: tamanho
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewVariantType('simple_color')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border ${
+                      newVariantType === 'simple_color'
+                        ? 'bg-primary text-white border-primary'
+                        : 'border-border text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Simples: cor
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setNewVariantType('composite')}
+                    className={`px-3 py-2 rounded-xl text-xs font-medium border ${
+                      newVariantType === 'composite'
+                        ? 'bg-primary text-white border-primary'
+                        : 'border-border text-foreground hover:bg-muted'
+                    }`}
+                  >
+                    Composta
+                  </button>
+                </div>
+
+                {newVariantType !== 'none' && (
+                  <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-xl">
+                    {(newVariantType === 'simple_size' || newVariantType === 'composite') && (
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Tamanho</label>
+                        <input
+                          type="text"
+                          value={formData.variant_size}
+                          onChange={(e) => setFormData({ ...formData, variant_size: e.target.value })}
+                          className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                          placeholder="ex: P, M, G"
+                        />
+                      </div>
+                    )}
+                    {(newVariantType === 'simple_color' || newVariantType === 'composite') && (
+                      <div>
+                        <label className="block text-xs text-muted-foreground mb-1">Cor</label>
+                        <input
+                          type="text"
+                          value={formData.variant_color}
+                          onChange={(e) => setFormData({ ...formData, variant_color: e.target.value })}
+                          className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                          placeholder="ex: Azul"
+                        />
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
 
               <div>
@@ -292,7 +781,7 @@ export default function ProdutosPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+                  className="px-6 py-2 btn-gradient font-medium"
                 >
                   {submitting ? 'Adicionando...' : 'Adicionar'}
                 </button>
@@ -308,79 +797,324 @@ export default function ProdutosPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {loading ? (
-            <p className="text-muted-foreground">Carregando...</p>
-          ) : products.length === 0 ? (
-            <p className="text-muted-foreground">Nenhum produto cadastrado</p>
-          ) : (
-            products.map((product) => (
-              <div
-                key={product.id}
-                className="bg-card border border-border rounded-2xl shadow-sm p-6 hover:shadow-lg transition-shadow"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <h3 className="text-lg font-semibold text-foreground line-clamp-2">
-                    {product.name}
-                  </h3>
-                  <button
-                    onClick={() => handleDeleteProduct(product.id)}
-                    className="p-1 text-destructive hover:bg-destructive/10 rounded"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {product.category && (
-                  <p className="text-xs text-muted-foreground mb-2">{product.category}</p>
-                )}
-
-                {product.description && (
-                  <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
-                    {product.description}
+        {viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            {loading ? (
+              <>
+                <SkeletonCard />
+                <SkeletonCard />
+                <SkeletonCard />
+              </>
+            ) : filteredProducts.length === 0 ? (
+              <div className="col-span-full">
+                <div className="bg-card border border-border rounded-2xl shadow-sm p-12 text-center">
+                  <PackageSearch className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
+                  <p className="text-foreground font-medium mb-1">
+                    {products.length === 0 ? 'Nenhum produto cadastrado' : 'Nenhum produto encontrado'}
                   </p>
-                )}
-
-                {(product.tags || []).length > 0 && (
-                  <div className="flex flex-wrap gap-1 mb-3">
-                    {(product.tags || []).map((tag) => (
-                      <span
-                        key={tag}
-                        className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
-                      >
-                        <Tag className="w-3 h-3" />
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                )}
-
-                <div className="flex justify-between items-end">
-                  <div>
-                    {product.sku && (
-                      <p className="text-xs text-muted-foreground">SKU: {product.sku}</p>
-                    )}
-                    {product.promotional_price ? (
-                      <div className="flex items-baseline gap-2">
-                        <p className="text-sm text-muted-foreground line-through">
-                          R$ {product.price.toFixed(2)}
-                        </p>
-                        <p className="text-xl font-bold text-primary">
-                          R$ {product.promotional_price.toFixed(2)}
-                        </p>
-                      </div>
-                    ) : (
-                      <p className="text-xl font-bold text-primary">
-                        R$ {product.price.toFixed(2)}
-                      </p>
-                    )}
-                  </div>
+                  <p className="text-sm text-muted-foreground mb-6">
+                    {products.length === 0
+                      ? 'Cadastre manualmente ou importe uma planilha para começar seu catálogo'
+                      : 'Tente ajustar os filtros ou o termo de busca'}
+                  </p>
+                  {products.length === 0 && (
+                    <button
+                      onClick={() => setShowForm(true)}
+                      className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+                    >
+                      <Plus className="w-4 h-4" />
+                      Novo produto
+                    </button>
+                  )}
                 </div>
               </div>
-            ))
-          )}
-        </div>
+            ) : (
+              filteredProducts.map((product) => {
+                const outOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
+                return (
+                <div
+                  key={product.id}
+                  onClick={() => setDetailProduct(product)}
+                  className={`bg-card border border-border rounded-2xl shadow-sm p-6 transition-all duration-200 hover:shadow-lg hover:scale-[1.02] cursor-pointer ${
+                    outOfStock ? 'border-l-4 border-l-destructive' : ''
+                  }`}
+                >
+                  {product.image_url && (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={product.image_url}
+                      alt={product.name}
+                      className="w-full aspect-square object-cover rounded-xl mb-3 bg-muted"
+                    />
+                  )}
+
+                  <div className="flex justify-between items-start mb-2">
+                    <h3 className="text-lg font-semibold text-foreground line-clamp-2">
+                      {product.name}
+                    </h3>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleDeleteProduct(product.id);
+                      }}
+                      className="p-1 text-destructive hover:bg-destructive/10 rounded flex-shrink-0"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-2 mb-2">
+                    {product.category && (
+                      <p className="text-xs text-muted-foreground">{product.category}</p>
+                    )}
+                    {product.purchase_url && (
+                      <ExternalLink className="w-3 h-3 text-primary" />
+                    )}
+                  </div>
+
+                  {product.description && (
+                    <p className="text-sm text-muted-foreground mb-3 line-clamp-2">
+                      {product.description}
+                    </p>
+                  )}
+
+                  {(product.variant_size || product.variant_color) && (
+                    <div className="flex flex-wrap gap-1 mb-2">
+                      {product.variant_size && (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                          Tam: {product.variant_size}
+                        </span>
+                      )}
+                      {product.variant_color && (
+                        <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                          Cor: {product.variant_color}
+                        </span>
+                      )}
+                    </div>
+                  )}
+
+                  {(product.tags || []).length > 0 && (
+                    <div className="flex flex-wrap gap-1 mb-3">
+                      {(product.tags || []).map((tag) => (
+                        <span
+                          key={tag}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
+                        >
+                          <Tag className="w-3 h-3" />
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+
+                  <div className="flex justify-between items-end">
+                    <div>
+                      {product.sku && (
+                        <p className="text-xs text-muted-foreground">SKU: {product.sku}</p>
+                      )}
+                      {product.stock_quantity !== null && (
+                        <p
+                          className={`text-xs ${
+                            product.stock_quantity > 0 ? 'text-muted-foreground' : 'text-destructive'
+                          }`}
+                        >
+                          {product.stock_quantity > 0
+                            ? `${product.stock_quantity} em estoque`
+                            : 'Sem estoque'}
+                        </p>
+                      )}
+                      {product.promotional_price ? (
+                        <div className="flex items-baseline gap-2">
+                          <p className="text-sm text-muted-foreground line-through">
+                            R$ {product.price.toFixed(2)}
+                          </p>
+                          <p className="text-xl font-bold text-primary">
+                            R$ {product.promotional_price.toFixed(2)}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-xl font-bold text-primary">
+                          R$ {product.price.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+                );
+              })
+            )}
+          </div>
+        ) : (
+          <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
+            {loading ? (
+              <div className="divide-y divide-border">
+                <div className="p-2"><Skeleton className="h-14 w-full" /></div>
+                <div className="p-2"><Skeleton className="h-14 w-full" /></div>
+                <div className="p-2"><Skeleton className="h-14 w-full" /></div>
+              </div>
+            ) : filteredProducts.length === 0 ? (
+              <div className="p-12 text-center">
+                <PackageSearch className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
+                <p className="text-foreground font-medium mb-1">
+                  {products.length === 0 ? 'Nenhum produto cadastrado' : 'Nenhum produto encontrado'}
+                </p>
+                <p className="text-sm text-muted-foreground mb-6">
+                  {products.length === 0
+                    ? 'Cadastre manualmente ou importe uma planilha para começar seu catálogo'
+                    : 'Tente ajustar os filtros ou o termo de busca'}
+                </p>
+                {products.length === 0 && (
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Novo produto
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead className="bg-muted">
+                    <tr>
+                      <th className="px-4 py-3 text-left font-semibold text-foreground w-16">
+                        Imagem
+                      </th>
+                      <th className="px-4 py-3 text-left font-semibold text-foreground">Nome</th>
+                      <th className="px-4 py-3 text-left font-semibold text-foreground">
+                        Categoria
+                      </th>
+                      <th className="px-4 py-3 text-left font-semibold text-foreground">Preço</th>
+                      <th className="px-4 py-3 text-left font-semibold text-foreground">
+                        Estoque
+                      </th>
+                      <th className="px-4 py-3 text-right font-semibold text-foreground">
+                        Ações
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {filteredProducts.map((product) => {
+                      const outOfStock = product.stock_quantity !== null && product.stock_quantity <= 0;
+                      return (
+                      <tr
+                        key={product.id}
+                        onClick={() => setDetailProduct(product)}
+                        className={`cursor-pointer hover:bg-muted transition-colors ${
+                          outOfStock ? 'border-l-4 border-l-destructive' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-3">
+                          {product.image_url ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={product.image_url}
+                              alt={product.name}
+                              className="w-12 h-12 rounded-lg object-cover bg-muted"
+                            />
+                          ) : (
+                            <div className="w-12 h-12 rounded-lg bg-muted" />
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-foreground line-clamp-1">
+                              {product.name}
+                            </span>
+                            {product.purchase_url && (
+                              <ExternalLink className="w-3 h-3 text-primary flex-shrink-0" />
+                            )}
+                          </div>
+                          {(product.variant_size || product.variant_color) && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {product.variant_size && (
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                                  Tam: {product.variant_size}
+                                </span>
+                              )}
+                              {product.variant_color && (
+                                <span className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded-full font-medium">
+                                  Cor: {product.variant_color}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                          {product.sku && (
+                            <p className="text-xs text-muted-foreground mt-0.5">
+                              SKU: {product.sku}
+                            </p>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-muted-foreground">
+                          {product.category || '—'}
+                        </td>
+                        <td className="px-4 py-3">
+                          {product.promotional_price ? (
+                            <div className="flex items-baseline gap-2">
+                              <span className="text-xs text-muted-foreground line-through">
+                                R$ {product.price.toFixed(2)}
+                              </span>
+                              <span className="font-bold text-primary">
+                                R$ {product.promotional_price.toFixed(2)}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="font-bold text-primary">
+                              R$ {product.price.toFixed(2)}
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3">
+                          {product.stock_quantity !== null ? (
+                            <span
+                              className={`text-xs ${
+                                product.stock_quantity > 0
+                                  ? 'text-muted-foreground'
+                                  : 'text-destructive'
+                              }`}
+                            >
+                              {product.stock_quantity > 0
+                                ? `${product.stock_quantity} em estoque`
+                                : 'Sem estoque'}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-right">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteProduct(product.id);
+                            }}
+                            className="p-1 text-destructive hover:bg-destructive/10 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
       </div>
+
+      {detailProduct && workspaceId && (
+        <ProductDetailModal
+          product={detailProduct}
+          workspaceId={workspaceId}
+          onClose={() => setDetailProduct(null)}
+          onSaved={() => {
+            setDetailProduct(null);
+            loadProducts(workspaceId);
+          }}
+        />
+      )}
     </div>
   );
 }

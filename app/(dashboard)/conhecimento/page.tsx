@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { Upload, Trash2, FileText, BookOpen, ToggleLeft, ToggleRight } from 'lucide-react';
+import { SkeletonCard } from '@/components/skeleton';
 
 interface KnowledgeEntry {
   id: string;
@@ -130,7 +131,7 @@ export default function ConhecimentoPage() {
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90"
+            className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
           >
             <Upload className="w-4 h-4" />
             Nova entrada
@@ -193,7 +194,7 @@ export default function ConhecimentoPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+                  className="px-6 py-2 btn-gradient font-medium"
                 >
                   {submitting ? 'Adicionando...' : 'Adicionar'}
                 </button>
@@ -209,24 +210,34 @@ export default function ConhecimentoPage() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 animate-fade-in">
           {loading ? (
-            <p className="text-muted-foreground">Carregando...</p>
+            <>
+              <SkeletonCard />
+              <SkeletonCard />
+            </>
           ) : entries.length === 0 ? (
             <div className="col-span-full">
               <div className="bg-card border border-border rounded-2xl shadow-sm p-12 text-center">
-                <BookOpen className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground mb-1">Nenhuma entrada de conhecimento</p>
-                <p className="text-sm text-muted-foreground">
+                <BookOpen className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
+                <p className="text-foreground font-medium mb-1">Nenhuma entrada de conhecimento</p>
+                <p className="text-sm text-muted-foreground mb-6">
                   Comece adicionando documentação para treinar a IA
                 </p>
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+                >
+                  <Upload className="w-4 h-4" />
+                  Nova entrada
+                </button>
               </div>
             </div>
           ) : (
             entries.map((entry) => (
               <div
                 key={entry.id}
-                className={`bg-card border border-border rounded-2xl shadow-sm p-6 hover:shadow-lg transition-shadow ${
+                className={`bg-card border border-border rounded-2xl shadow-sm p-6 transition-all duration-200 hover:shadow-lg hover:scale-[1.02] ${
                   !entry.active ? 'opacity-60' : ''
                 }`}
               >

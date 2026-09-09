@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { Save, Zap, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Save, Zap, ToggleLeft, ToggleRight, LifeBuoy, TrendingUp, MessageCircle, Gift, Check } from 'lucide-react';
 
 interface AIProfile {
   id: string;
@@ -34,6 +34,112 @@ const emptyForm = {
   enabled: true,
 };
 
+interface AgentTemplate {
+  id: string;
+  label: string;
+  description: string;
+  icon: typeof LifeBuoy;
+  suggestedName: string;
+  values: {
+    objective: string;
+    persona: string;
+    tone: string;
+    custom_tone?: string;
+    response_style: string;
+    allowed_topics: string;
+    forbidden_topics: string;
+    business_rules: string;
+  };
+}
+
+const AGENT_TEMPLATES: AgentTemplate[] = [
+  {
+    id: 'suporte',
+    label: 'Suporte',
+    description: 'Resolve dúvidas técnicas, pedidos e trocas',
+    icon: LifeBuoy,
+    suggestedName: 'Clara',
+    values: {
+      objective:
+        'Resolver dúvidas técnicas e problemas relacionados a pedidos, entregas, trocas e devoluções, garantindo que o cliente saia com o problema encaminhado ou resolvido.',
+      persona:
+        'Atendente de suporte experiente, paciente e objetiva. Explica processos com clareza, confirma os dados do pedido antes de responder e transmite segurança mesmo em reclamações mais tensas.',
+      tone: 'profissional',
+      response_style: 'detalhado',
+      allowed_topics:
+        'Status do pedido, rastreio, prazo de entrega, política de trocas e devoluções, defeitos de produto, problemas no pagamento, segunda via de nota fiscal, instruções de uso do produto.',
+      forbidden_topics:
+        'Descontos ou negociação de preço, promessas de reembolso sem análise, opiniões sobre concorrentes, assuntos pessoais ou fora do contexto de compra.',
+      business_rules:
+        'Sempre pedir número do pedido ou CPF antes de dar qualquer informação. Trocas e devoluções seguem o prazo legal de 7 dias (arrependimento) e 30 dias (defeito) — nunca prometer prazo diferente. Em caso de reclamação grave, produto com defeito recorrente, ameaça de processo/Procon ou cliente visivelmente insatisfeito após 2 interações, escalar imediatamente para um atendente humano avisando "vou te transferir para um especialista para resolver isso com prioridade". Nunca prometer reembolso sem confirmação humana.',
+    },
+  },
+  {
+    id: 'vendas',
+    label: 'Vendas',
+    description: 'Apresenta produtos e conduz até o fechamento',
+    icon: TrendingUp,
+    suggestedName: 'Bia',
+    values: {
+      objective:
+        'Converter o interesse do cliente em venda: apresentar os produtos certos para a necessidade dele, tirar dúvidas sobre especificações e formas de pagamento, contornar objeções e conduzir até o fechamento do pedido.',
+      persona:
+        'Vendedora entusiasmada, consultiva e persistente sem ser inconveniente. Conhece bem o catálogo, faz perguntas para entender a necessidade antes de indicar produto e usa gatilhos de urgência e prova social com naturalidade, sem exagerar.',
+      tone: 'amigavel',
+      response_style: 'conversacional',
+      allowed_topics:
+        'Catálogo de produtos, preços, formas de pagamento e parcelamento, frete, cupons de desconto ativos, comparação entre produtos, disponibilidade em estoque, prazo de entrega, garantia.',
+      forbidden_topics:
+        'Reclamações de pedidos antigos (encaminhar para o suporte), críticas a concorrentes, assuntos pessoais fora do contexto de compra.',
+      business_rules:
+        'Desconto máximo automático de 10% em compras à vista via Pix, sem necessitar aprovação humana; qualquer desconto acima disso precisa de aprovação humana antes de ser oferecido. Usar urgência real (estoque baixo, cupom com validade, frete grátis por tempo limitado) — nunca inventar prazo ou quantidade que não existam. Se o cliente pedir para falar com um humano ou demonstrar que já decidiu comprar, agilizar o fechamento em vez de insistir em mais argumentos. Sempre oferecer 1 produto complementar (upsell) depois que o cliente confirmar interesse no item principal.',
+    },
+  },
+  {
+    id: 'atendimento',
+    label: 'Atendimento Geral',
+    description: 'Tira dúvidas gerais e direciona o cliente',
+    icon: MessageCircle,
+    suggestedName: 'Sofia',
+    values: {
+      objective:
+        'Dar as respostas rápidas mais comuns do dia a dia da loja (horário de funcionamento, formas de pagamento, prazo de entrega, formas de contato) e direcionar o cliente para o setor certo quando o assunto for venda, suporte técnico ou pós-venda.',
+      persona:
+        'Recepcionista simpática e prestativa, direta ao ponto. Cumprimenta bem, entende rápido o que o cliente precisa e já indica o caminho, sem enrolar.',
+      tone: 'amigavel',
+      response_style: 'conciso',
+      allowed_topics:
+        'Horário de funcionamento, endereço da loja física (se houver), formas de pagamento aceitas, prazo médio de entrega por região, canais de contato, redes sociais, política geral de trocas (visão geral, sem entrar em caso específico).',
+      forbidden_topics:
+        'Negociação de preço ou desconto, análise de caso específico de pedido com problema, questões técnicas de produto, assuntos pessoais.',
+      business_rules:
+        'Quando o cliente demonstrar intenção clara de comprar, direcionar a conversa para apresentar produtos (seguindo o mesmo cuidado consultivo do agente de vendas). Quando o cliente relatar um problema com pedido já feito (atraso, defeito, dúvida sobre troca de um pedido específico), avisar que vai encaminhar para o time de suporte e sinalizar para atendimento humano. Nunca inventar informação que não esteja confirmada na base de conhecimento da loja — se não souber, diz que vai verificar e chama um humano.',
+    },
+  },
+  {
+    id: 'pos-venda',
+    label: 'Pós-venda',
+    description: 'Acompanha a experiência e oferece novos produtos',
+    icon: Gift,
+    suggestedName: 'Laura',
+    values: {
+      objective:
+        'Acompanhar o cliente depois da compra: perguntar como foi a experiência de compra e o recebimento do produto, coletar feedback e avaliação, e a partir do que a pessoa comprou, oferecer proativamente produtos novos ou complementares (upsell e cross-sell) que façam sentido para ela.',
+      persona:
+        'Consultora de relacionamento calorosa e genuinamente interessada na experiência do cliente, não só em vender de novo. Pergunta antes de oferecer, comemora quando a experiência foi boa e trata com cuidado quando não foi, sempre com escuta ativa antes de qualquer oferta.',
+      tone: 'personalizado',
+      custom_tone: 'Caloroso, consultivo e acolhedor, como uma consultora que genuinamente se importa com a experiência do cliente antes de pensar em vender de novo.',
+      response_style: 'conversacional',
+      allowed_topics:
+        'Experiência de recebimento do produto (prazo, embalagem, estado do item), satisfação com o produto comprado, dúvidas de uso pós-compra, pedido de avaliação/depoimento, sugestão de produtos complementares ou novos lançamentos relacionados à compra anterior, programa de fidelidade ou cupom de recompra.',
+      forbidden_topics:
+        'Reclamação de defeito ou problema não resolvido (encaminhar para o suporte imediatamente, sem tentar resolver sozinha), negociação de reembolso, assuntos pessoais fora do contexto pós-compra.',
+      business_rules:
+        'Entrar em contato entre 3 e 7 dias após a entrega confirmada, nunca antes do produto chegar. Primeiro perguntar como foi a experiência (recebimento, prazo, condição do produto) e só depois de uma resposta positiva ou neutra oferecer o próximo produto — nunca emendar a oferta antes de ouvir o feedback. Se o cliente relatar qualquer insatisfação, defeito ou problema, parar a oferta imediatamente e encaminhar para o suporte humano. A oferta de cross-sell deve ser sempre coerente com o que a pessoa comprou (ex.: quem comprou tênis de corrida recebe oferta de meia técnica ou palmilha, não um produto aleatório). Pedir avaliação/depoimento apenas quando o feedback foi positivo.',
+    },
+  },
+];
+
 export default function IaPage() {
   const [profile, setProfile] = useState<AIProfile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -42,7 +148,26 @@ export default function IaPage() {
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
+  const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
   const supabase = createClient();
+
+  function applyTemplate(template: AgentTemplate) {
+    setFormData((prev) => ({
+      ...prev,
+      agent_name: prev.agent_name || template.suggestedName,
+      objective: template.values.objective,
+      persona: template.values.persona,
+      tone: template.values.tone,
+      custom_tone: template.values.custom_tone || '',
+      response_style: template.values.response_style,
+      allowed_topics: template.values.allowed_topics,
+      forbidden_topics: template.values.forbidden_topics,
+      business_rules: template.values.business_rules,
+    }));
+    setAppliedTemplate(template.id);
+    setSaved(false);
+    window.setTimeout(() => setAppliedTemplate(null), 2500);
+  }
 
   useEffect(() => {
     init();
@@ -122,8 +247,10 @@ export default function IaPage() {
   if (loading) {
     return (
       <div className="p-2">
-        <div className="max-w-4xl mx-auto">
-          <p className="text-muted-foreground">Carregando...</p>
+        <div className="max-w-4xl mx-auto space-y-6">
+          <div className="h-9 w-72 bg-muted animate-pulse rounded-xl" />
+          <div className="h-40 bg-muted animate-pulse rounded-2xl" />
+          <div className="h-96 bg-muted animate-pulse rounded-2xl" />
         </div>
       </div>
     );
@@ -131,10 +258,12 @@ export default function IaPage() {
 
   return (
     <div className="p-2">
-      <div className="max-w-4xl mx-auto">
+      <div className="max-w-4xl mx-auto animate-fade-in">
         <div className="flex items-center justify-between mb-8">
           <div className="flex items-center gap-3">
-            <Zap className="w-8 h-8 text-primary" />
+            <div className="gradient-brand w-11 h-11 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+              <Zap className="w-5 h-5 text-white" fill="currentColor" />
+            </div>
             <div>
               <h1 className="text-3xl font-bold text-foreground">Configuração da IA</h1>
               <p className="text-muted-foreground">Personalize seu agente de atendimento</p>
@@ -143,12 +272,16 @@ export default function IaPage() {
           <button
             type="button"
             onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
-            className="flex items-center gap-2 text-sm font-medium text-foreground"
+            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+              formData.enabled
+                ? 'gradient-brand text-white shadow-sm'
+                : 'bg-muted text-muted-foreground'
+            }`}
           >
             {formData.enabled ? (
-              <ToggleRight className="w-8 h-8 text-primary" />
+              <ToggleRight className="w-5 h-5" />
             ) : (
-              <ToggleLeft className="w-8 h-8 text-muted-foreground" />
+              <ToggleLeft className="w-5 h-5" />
             )}
             {formData.enabled ? 'IA ativa' : 'IA desativada'}
           </button>
@@ -165,6 +298,44 @@ export default function IaPage() {
             Perfil de IA salvo com sucesso!
           </div>
         )}
+
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
+          <h3 className="text-lg font-semibold text-foreground mb-1">Comece com um template</h3>
+          <p className="text-sm text-muted-foreground mb-4">
+            Escolha um perfil pronto e ajuste depois — os campos abaixo são preenchidos automaticamente.
+          </p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-border rounded-2xl border border-border overflow-hidden">
+            {AGENT_TEMPLATES.map((template) => {
+              const Icon = template.icon;
+              const isApplied = appliedTemplate === template.id;
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  onClick={() => applyTemplate(template)}
+                  className={`relative flex flex-col items-start gap-3 p-5 text-left transition-colors duration-200 ${
+                    isApplied ? 'bg-primary/5' : 'bg-white hover:bg-muted'
+                  }`}
+                >
+                  {isApplied && (
+                    <span className="absolute top-4 right-4 flex items-center justify-center w-5 h-5 rounded-full bg-primary text-white">
+                      <Check className="w-3 h-3" />
+                    </span>
+                  )}
+                  <div className="flex items-center justify-center w-10 h-10 rounded-full bg-primary/10 text-primary">
+                    <Icon className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="font-semibold text-foreground text-sm">{template.label}</p>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
+                      {template.description}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
         <div className="bg-card border border-border rounded-2xl shadow-sm p-8">
           <form onSubmit={handleSave} className="space-y-6">
@@ -312,7 +483,7 @@ export default function IaPage() {
               <button
                 type="submit"
                 disabled={saving}
-                className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+                className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
               >
                 <Save className="w-4 h-4" />
                 {saving ? 'Salvando...' : 'Salvar Configurações'}

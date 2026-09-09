@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { Search, MessageSquare, Users, Plus, Tag, X, Trash2 } from 'lucide-react';
+import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal } from 'lucide-react';
 
 interface Contact {
   id: string;
@@ -26,7 +26,12 @@ export default function ContatosPage() {
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone: '', tagsInput: '', notes: '' });
   const [error, setError] = useState('');
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedTags, setSelectedTags] = useState<string[]>([]);
+  const [sortBy, setSortBy] = useState<'recent' | 'name' | 'last_contact'>('recent');
   const supabase = createClient();
+
+  const allTags = Array.from(new Set(contacts.flatMap((c) => c.tags || []))).sort();
 
   useEffect(() => {
     init();
@@ -34,14 +39,39 @@ export default function ContatosPage() {
 
   useEffect(() => {
     const term = searchTerm.toLowerCase();
-    const filtered = contacts.filter(
+    let filtered = contacts.filter(
       (contact) =>
         (contact.name || contact.push_name || '').toLowerCase().includes(term) ||
         contact.phone.includes(searchTerm) ||
         (contact.tags || []).some((tag) => tag.toLowerCase().includes(term))
     );
+
+    if (selectedTags.length > 0) {
+      filtered = filtered.filter((contact) =>
+        selectedTags.every((tag) => (contact.tags || []).includes(tag))
+      );
+    }
+
+    filtered = [...filtered].sort((a, b) => {
+      if (sortBy === 'name') {
+        return (a.name || a.push_name || '').localeCompare(b.name || b.push_name || '');
+      }
+      if (sortBy === 'last_contact') {
+        return (
+          new Date(b.last_contact_at || 0).getTime() - new Date(a.last_contact_at || 0).getTime()
+        );
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+
     setFilteredContacts(filtered);
-  }, [searchTerm, contacts]);
+  }, [searchTerm, contacts, selectedTags, sortBy]);
+
+  function toggleTagFilter(tag: string) {
+    setSelectedTags((prev) =>
+      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }
 
   async function init() {
     try {
@@ -139,7 +169,7 @@ export default function ContatosPage() {
           </div>
           <button
             onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90"
+            className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
           >
             <Plus className="w-4 h-4" />
             Novo contato
@@ -210,7 +240,7 @@ export default function ContatosPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+                  className="px-6 py-2 btn-gradient font-medium"
                 >
                   {submitting ? 'Salvando...' : 'Adicionar contato'}
                 </button>
@@ -236,19 +266,117 @@ export default function ContatosPage() {
               placeholder="Buscar por nome, telefone ou tag..."
               className="flex-1 text-foreground placeholder-muted-foreground outline-none"
             />
+            <button
+              onClick={() => setShowFilters(!showFilters)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium border ${
+                showFilters || selectedTags.length > 0
+                  ? 'bg-primary/10 text-primary border-primary/20'
+                  : 'border-border text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              <SlidersHorizontal className="w-4 h-4" />
+              Filtros
+              {selectedTags.length > 0 && (
+                <span className="w-5 h-5 flex items-center justify-center bg-primary text-white rounded-full text-xs">
+                  {selectedTags.length}
+                </span>
+              )}
+            </button>
           </div>
+
+          {showFilters && (
+            <div className="mt-4 pt-4 border-t border-border space-y-4">
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground mb-2">Ordenar por</p>
+                <div className="flex gap-2">
+                  {[
+                    { value: 'recent', label: 'Mais recentes' },
+                    { value: 'name', label: 'Nome (A-Z)' },
+                    { value: 'last_contact', label: 'Último contato' },
+                  ].map((opt) => (
+                    <button
+                      key={opt.value}
+                      onClick={() => setSortBy(opt.value as typeof sortBy)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+                        sortBy === opt.value
+                          ? 'bg-primary text-white border-primary'
+                          : 'border-border text-muted-foreground hover:bg-muted'
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {allTags.length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-muted-foreground mb-2">
+                    Tags {selectedTags.length > 0 && `(contato precisa ter todas as selecionadas)`}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {allTags.map((tag) => (
+                      <button
+                        key={tag}
+                        onClick={() => toggleTagFilter(tag)}
+                        className={`inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-xs font-medium border ${
+                          selectedTags.includes(tag)
+                            ? 'bg-primary text-white border-primary'
+                            : 'border-border text-muted-foreground hover:bg-muted'
+                        }`}
+                      >
+                        <Tag className="w-3 h-3" />
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {selectedTags.length > 0 && (
+                <button
+                  onClick={() => setSelectedTags([])}
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                >
+                  Limpar filtros de tag
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="bg-card border border-border rounded-2xl shadow-sm overflow-hidden">
           {loading ? (
-            <div className="p-12 text-center text-muted-foreground">
-              <p>Carregando...</p>
+            <div className="divide-y divide-border">
+              {[0, 1, 2, 3, 4].map((i) => (
+                <div key={i} className="flex items-center gap-3 p-4">
+                  <div className="w-9 h-9 rounded-full bg-muted animate-pulse flex-shrink-0" />
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3.5 w-1/4 bg-muted animate-pulse rounded-full" />
+                    <div className="h-3 w-1/6 bg-muted animate-pulse rounded-full" />
+                  </div>
+                  <div className="h-5 w-16 bg-muted animate-pulse rounded-full" />
+                </div>
+              ))}
             </div>
           ) : filteredContacts.length === 0 ? (
-            <div className="p-12 text-center text-muted-foreground">
-              <Users className="w-12 h-12 mx-auto mb-4 opacity-30" />
-              <p>Nenhum contato encontrado</p>
-              <p className="text-sm mt-1">Clique em "Novo contato" para cadastrar o primeiro</p>
+            <div className="p-12 text-center">
+              <Users className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
+              <p className="text-foreground font-medium mb-1">Nenhum contato encontrado</p>
+              <p className="text-sm text-muted-foreground mb-6">
+                {contacts.length === 0
+                  ? 'Cadastre o primeiro contato para começar'
+                  : 'Tente ajustar a busca ou os filtros'}
+              </p>
+              {contacts.length === 0 && (
+                <button
+                  onClick={() => setShowForm(true)}
+                  className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+                >
+                  <Plus className="w-4 h-4" />
+                  Novo contato
+                </button>
+              )}
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -263,10 +391,17 @@ export default function ContatosPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredContacts.map((contact) => (
-                    <tr key={contact.id} className="hover:bg-gray-50 transition-colors">
+                  {filteredContacts.map((contact) => {
+                    const label = contact.name || contact.push_name || 'Sem nome';
+                    return (
+                    <tr key={contact.id} className="transition-all duration-200 hover:bg-muted">
                       <td className="px-6 py-4 text-sm font-medium text-foreground">
-                        {contact.name || contact.push_name || 'Sem nome'}
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                            {label.charAt(0).toUpperCase()}
+                          </div>
+                          {label}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-muted-foreground">{contact.phone}</td>
                       <td className="px-6 py-4">
@@ -296,7 +431,8 @@ export default function ContatosPage() {
                         </button>
                       </td>
                     </tr>
-                  ))}
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

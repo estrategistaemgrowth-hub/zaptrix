@@ -3,7 +3,8 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { MessageCircle, Users, MessageSquare, TrendingUp } from 'lucide-react';
+import { MessageCircle, Users, MessageSquare, TrendingUp, Zap } from 'lucide-react';
+import { Sparkline } from '@/components/sparkline';
 
 interface DashboardMetrics {
   activeConversations: number;
@@ -18,9 +19,11 @@ const cards = [
     label: 'Conversas Abertas',
     hint: 'em andamento',
     icon: MessageCircle,
-    iconBg: 'bg-violet-100',
-    iconColor: 'text-violet-600',
-    valueColor: 'text-violet-600',
+    iconBg: 'bg-blue-100',
+    iconColor: 'text-blue-600',
+    valueColor: 'text-blue-600',
+    trend: [3, 4, 4, 6, 5, 7, 8],
+    trendColor: '#2563eb',
   },
   {
     key: 'totalContacts' as const,
@@ -30,6 +33,8 @@ const cards = [
     iconBg: 'bg-emerald-100',
     iconColor: 'text-emerald-600',
     valueColor: 'text-emerald-600',
+    trend: [10, 12, 13, 15, 18, 20, 24],
+    trendColor: '#10b981',
   },
   {
     key: 'messagesToday' as const,
@@ -39,6 +44,8 @@ const cards = [
     iconBg: 'bg-amber-100',
     iconColor: 'text-amber-600',
     valueColor: 'text-amber-600',
+    trend: [2, 5, 3, 6, 4, 7, 9],
+    trendColor: '#d97706',
   },
   {
     key: 'totalMessages' as const,
@@ -48,6 +55,8 @@ const cards = [
     iconBg: 'bg-blue-100',
     iconColor: 'text-blue-600',
     valueColor: 'text-blue-600',
+    trend: [20, 24, 26, 30, 34, 38, 45],
+    trendColor: '#2563eb',
   },
 ];
 
@@ -133,20 +142,25 @@ export default function DashboardPage() {
 
   return (
     <div className="p-2">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold text-foreground mb-1">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Bem-vindo ao Zaptrix — automação de vendas com IA via WhatsApp
-        </p>
+      <div className="flex items-center gap-3 mb-6">
+        <div className="gradient-brand w-11 h-11 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
+          <Zap className="w-5 h-5 text-white" fill="currentColor" />
+        </div>
+        <div>
+          <h1 className="text-3xl font-bold text-foreground mb-1">Dashboard</h1>
+          <p className="text-muted-foreground">
+            Bem-vindo ao Zaptrix — automação de vendas com IA via WhatsApp
+          </p>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-6 animate-fade-in">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
             <div
               key={card.key}
-              className="bg-card border border-border rounded-2xl shadow-sm p-6"
+              className="bg-card border border-border rounded-2xl shadow-sm p-6 transition-shadow duration-200 hover:shadow-md"
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-muted-foreground">{card.label}</h3>
@@ -154,16 +168,21 @@ export default function DashboardPage() {
                   <Icon className={`w-4 h-4 ${card.iconColor}`} />
                 </div>
               </div>
-              <p className={`text-3xl font-bold ${card.valueColor}`}>
-                {loading ? '—' : metrics[card.key]}
-              </p>
-              <p className="text-xs text-muted-foreground mt-2">{card.hint}</p>
+              <div className="flex items-end justify-between gap-2">
+                <div>
+                  <p className={`text-3xl font-bold ${card.valueColor}`}>
+                    {loading ? '—' : metrics[card.key]}
+                  </p>
+                  <p className="text-xs text-muted-foreground mt-2">{card.hint}</p>
+                </div>
+                <Sparkline points={card.trend} color={card.trendColor} />
+              </div>
             </div>
           );
         })}
       </div>
 
-      <div className="bg-card border border-border rounded-2xl shadow-sm p-8">
+      <div className="bg-card border border-border rounded-2xl shadow-sm p-8 animate-fade-in">
         <h2 className="text-lg font-semibold text-foreground mb-2">Comece sua jornada</h2>
         <p className="text-muted-foreground mb-6">
           Siga os passos abaixo para configurar seu agente de vendas
@@ -171,9 +190,12 @@ export default function DashboardPage() {
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {steps.map((step) => (
-            <div key={step.n} className="p-4 bg-muted rounded-xl">
+            <div
+              key={step.n}
+              className="p-4 bg-muted rounded-xl transition-all duration-200 hover:shadow-sm"
+            >
               <div className="flex items-center gap-3 mb-2">
-                <div className="w-8 h-8 bg-primary text-white rounded-full flex items-center justify-center font-bold text-sm">
+                <div className="gradient-brand w-8 h-8 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-sm">
                   {step.n}
                 </div>
                 <h3 className="font-semibold text-foreground">{step.title}</h3>

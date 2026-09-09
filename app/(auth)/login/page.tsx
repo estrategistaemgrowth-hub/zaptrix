@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -39,8 +40,15 @@ export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background">
       <div className="w-full max-w-md">
-        <div className="bg-card rounded-lg shadow-lg p-8">
-          <h1 className="text-2xl font-bold text-foreground mb-2">Zaptrix</h1>
+        <div className="bg-card rounded-2xl shadow-sm p-8">
+          <Image
+            src="/zaptrix-logo-light.png"
+            alt="Zaptrix"
+            width={180}
+            height={58}
+            className="mb-4"
+            priority
+          />
           <p className="text-muted-foreground mb-8">Automação de vendas & atendimento via WhatsApp com IA</p>
 
           {error && (

@@ -3,7 +3,8 @@
 import { useState, useEffect, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { Send, MessageCircle, Clock, Bot, BotOff, CheckCircle2 } from 'lucide-react';
+import { Send, MessageCircle, Clock, Bot, BotOff, CheckCircle2, MessagesSquare } from 'lucide-react';
+import { TypingIndicator } from '@/components/typing-indicator';
 
 interface Conversation {
   id: string;
@@ -34,6 +35,7 @@ export default function AtendimentoPage() {
   const [sending, setSending] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [showTyping, setShowTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const supabase = createClient();
 
@@ -151,6 +153,13 @@ export default function AtendimentoPage() {
     setMessageInput('');
     await loadMessages(selectedConversation.id);
     setSending(false);
+
+    // Decorative only: simulates the AI "reading" the message it will
+    // eventually reply to. No real generation is triggered here.
+    if (selectedConversation.ai_enabled) {
+      setShowTyping(true);
+      window.setTimeout(() => setShowTyping(false), 1700);
+    }
   }
 
   async function handleToggleAI() {
@@ -217,69 +226,87 @@ export default function AtendimentoPage() {
 
           <div className="flex-1 overflow-y-auto">
             {loading ? (
-              <div className="p-4 text-center text-muted-foreground">
-                <p>Carregando...</p>
+              <div className="divide-y divide-border">
+                {[0, 1, 2, 3].map((i) => (
+                  <div key={i} className="flex items-center gap-3 p-4">
+                    <div className="w-10 h-10 rounded-full bg-muted animate-pulse flex-shrink-0" />
+                    <div className="flex-1 space-y-2">
+                      <div className="h-3.5 w-2/3 bg-muted animate-pulse rounded-full" />
+                      <div className="h-3 w-1/3 bg-muted animate-pulse rounded-full" />
+                    </div>
+                  </div>
+                ))}
               </div>
             ) : conversations.length === 0 ? (
               <div className="p-6 text-center text-muted-foreground">
-                <MessageCircle className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                <p>Nenhuma conversa ainda</p>
+                <MessageCircle className="w-16 h-16 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-foreground font-medium">Nenhuma conversa ainda</p>
                 <p className="text-xs mt-1">
                   Conversas aparecem aqui quando um cliente escreve pelo WhatsApp
                 </p>
               </div>
             ) : (
-              conversations.map((conv) => (
+              conversations.map((conv) => {
+                const label = contactLabel(conv.contact);
+                const initial = label.charAt(0).toUpperCase();
+                return (
                 <button
                   key={conv.id}
                   onClick={() => setSelectedConversation(conv)}
-                  className={`w-full p-4 border-b border-border text-left transition-colors ${
+                  className={`w-full p-4 border-b border-border text-left transition-all duration-200 ${
                     selectedConversation?.id === conv.id
                       ? 'bg-primary/5 font-semibold'
                       : 'hover:bg-muted'
                   }`}
                 >
-                  <div className="flex items-center justify-between mb-1">
-                    <p className="font-medium text-foreground line-clamp-1">
-                      {contactLabel(conv.contact)}
-                    </p>
-                    <span
-                      className={`text-xs px-2 py-1 rounded-full ${
-                        conv.status === 'open'
-                          ? 'bg-green-100 text-green-700'
-                          : conv.status === 'archived'
-                          ? 'bg-yellow-100 text-yellow-700'
-                          : 'bg-gray-100 text-gray-700'
-                      }`}
-                    >
-                      {conv.status === 'open' ? 'Aberta' : conv.status === 'archived' ? 'Arquivada' : 'Fechada'}
-                    </span>
-                  </div>
-                  <p className="text-sm text-muted-foreground line-clamp-1">
-                    {conv.contact?.phone || '—'}
-                  </p>
-                  <div className="flex items-center gap-2 mt-1">
-                    {conv.last_message_at && (
-                      <p className="text-xs text-muted-foreground">
-                        <Clock className="w-3 h-3 inline mr-1" />
-                        {new Date(conv.last_message_at).toLocaleTimeString('pt-BR', {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
+                  <div className="flex items-start gap-3">
+                    <div className="relative flex-shrink-0">
+                      <div className="w-10 h-10 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-sm">
+                        {initial}
+                      </div>
+                      <span
+                        title={conv.status === 'open' ? 'Aberta' : conv.status === 'archived' ? 'Arquivada' : 'Fechada'}
+                        className={`absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full ring-2 ring-card ${
+                          conv.status === 'open'
+                            ? 'bg-emerald-500'
+                            : conv.status === 'archived'
+                            ? 'bg-amber-500'
+                            : 'bg-gray-400'
+                        }`}
+                      />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-0.5">
+                        <p className="font-medium text-foreground line-clamp-1">{label}</p>
+                      </div>
+                      <p className="text-sm text-muted-foreground line-clamp-1">
+                        {conv.contact?.phone || '—'}
                       </p>
-                    )}
-                    {conv.ai_enabled ? (
-                      <span className="flex items-center gap-1 text-xs text-primary">
-                        <Bot className="w-3 h-3" /> IA
-                      </span>
-                    ) : (
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                        <BotOff className="w-3 h-3" /> Manual
-                      </span>
-                    )}
+                      <div className="flex items-center gap-2 mt-1">
+                        {conv.last_message_at && (
+                          <p className="text-xs text-muted-foreground">
+                            <Clock className="w-3 h-3 inline mr-1" />
+                            {new Date(conv.last_message_at).toLocaleTimeString('pt-BR', {
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </p>
+                        )}
+                        {conv.ai_enabled ? (
+                          <span className="flex items-center gap-1 text-xs text-primary">
+                            <Bot className="w-3 h-3" /> IA
+                          </span>
+                        ) : (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <BotOff className="w-3 h-3" /> Manual
+                          </span>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </button>
-              ))
+                );
+              })
             )}
           </div>
         </div>
@@ -302,9 +329,9 @@ export default function AtendimentoPage() {
                   <button
                     onClick={handleToggleAI}
                     title={selectedConversation.ai_enabled ? 'Desligar IA (assumir manualmente)' : 'Ligar IA'}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium border ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium border transition-all duration-200 ${
                       selectedConversation.ai_enabled
-                        ? 'bg-primary/10 text-primary border-primary/20'
+                        ? 'gradient-brand text-white border-transparent shadow-sm'
                         : 'bg-gray-100 text-muted-foreground border-border'
                     }`}
                   >
@@ -331,8 +358,10 @@ export default function AtendimentoPage() {
               {/* Mensagens */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-card">
                 {messages.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-muted-foreground">
-                    <p>Sem mensagens ainda</p>
+                  <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
+                    <MessagesSquare className="w-16 h-16 text-muted-foreground/40 mb-3" />
+                    <p className="text-foreground font-medium">Sem mensagens ainda</p>
+                    <p className="text-sm mt-1">Envie a primeira mensagem para começar a conversa</p>
                   </div>
                 ) : (
                   messages.map((msg) => (
@@ -369,6 +398,11 @@ export default function AtendimentoPage() {
                     </div>
                   ))
                 )}
+                {showTyping && (
+                  <div className="flex justify-end">
+                    <TypingIndicator label="IA está digitando uma resposta" />
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
 
@@ -385,7 +419,7 @@ export default function AtendimentoPage() {
                   <button
                     type="submit"
                     disabled={sending || !messageInput.trim()}
-                    className="flex items-center gap-2 px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+                    className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
                   >
                     <Send className="w-4 h-4" />
                   </button>
@@ -393,8 +427,10 @@ export default function AtendimentoPage() {
               </form>
             </>
           ) : (
-            <div className="flex-1 flex items-center justify-center text-muted-foreground">
-              <p>Selecione uma conversa para começar</p>
+            <div className="flex-1 flex flex-col items-center justify-center text-center text-muted-foreground p-6">
+              <MessageCircle className="w-16 h-16 text-muted-foreground/40 mb-3" />
+              <p className="text-foreground font-medium">Selecione uma conversa</p>
+              <p className="text-sm mt-1">Escolha um contato na lista ao lado para ver o histórico</p>
             </div>
           )}
         </div>

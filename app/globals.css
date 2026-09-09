@@ -1,43 +1,43 @@
 @import "tailwindcss";
 
 :root {
-  /* Zaptrix Design System (Nubank-style) */
+  /* Zaptrix Design System (logo blue) */
 
   /* Primary colors */
-  --primary: #820ad1;
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
-  --secondary: #3e1874;
-  --secondary-foreground: #000000;
-  --tertiary: #d2a5ff;
+  --secondary: #1d4ed8;
+  --secondary-foreground: #ffffff;
+  --tertiary: #7dd3fc;
 
   /* Surfaces */
-  --background: #f1f0f7;
-  --foreground: #1a1523;
+  --background: #f0f4fa;
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #1a1523;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #1a1523;
-  --muted: #f5f4fa;
-  --muted-foreground: #767085;
+  --popover-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
 
   /* States */
-  --accent: #820ad1;
+  --accent: #2563eb;
   --accent-foreground: #ffffff;
   --destructive: #d01d1c;
   --destructive-foreground: #ffffff;
-  --border: #e8e6f0;
+  --border: #e2e8f0;
   --input: #ffffff;
-  --ring: #820ad1;
+  --ring: #2563eb;
 
   /* Semantic */
   --success: #0c7a3a;
   --warning: #9b5a00;
-  --info: #820ad1;
+  --info: #2563eb;
 
   /* Charts */
-  --chart-1: #820ad1;
-  --chart-2: #820ad1;
-  --chart-3: #d2a5ff;
+  --chart-1: #2563eb;
+  --chart-2: #22d3ee;
+  --chart-3: #7dd3fc;
   --chart-4: #9b5a00;
   --chart-5: #9b5a00;
 
@@ -63,7 +63,7 @@
     --muted-foreground: #bfbfbf;
     --border: #ffffff1a;
     --input: #080808;
-    --ring: #820ad1;
+    --ring: #2563eb;
   }
 }
 
@@ -134,4 +134,131 @@ body {
   background-color: var(--background);
   color: var(--foreground);
   font-feature-settings: "rlig" 1, "calt" 1;
+}
+
+/* Brand gradient — the logo's cyan-to-royal-blue sweep, reserved for 1-2
+   deliberate accents per screen (never a background wash). */
+.gradient-brand {
+  background: linear-gradient(to bottom right, #22d3ee, #3b82f6, #1d4ed8);
+}
+
+/* Primary CTA — pill-shaped, brand gradient, glow on hover. The system's
+   signature action button (dashboard, produtos, conhecimento, etc). */
+.btn-gradient {
+  background: linear-gradient(to bottom right, #22d3ee, #3b82f6, #1d4ed8);
+  color: #ffffff;
+  border-radius: 9999px;
+  box-shadow: 0 4px 14px -2px rgba(37, 99, 235, 0.4);
+  transition: box-shadow var(--duration-faster) ease-out, transform var(--duration-faster) ease-out,
+    filter var(--duration-faster) ease-out;
+}
+
+.btn-gradient:hover:not(:disabled) {
+  box-shadow: 0 6px 20px -2px rgba(37, 99, 235, 0.55);
+  filter: brightness(1.05);
+}
+
+.btn-gradient:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.btn-gradient:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-gradient {
+    transition: none;
+  }
+}
+
+/* Motion */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes modalIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes backdropIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fade-in {
+  animation: fadeIn var(--duration-gentle) ease-out both;
+}
+
+.animate-modal-in {
+  animation: modalIn var(--duration-gentle) ease-out both;
+}
+
+.animate-backdrop-in {
+  animation: backdropIn var(--duration-faster) ease-out both;
+}
+
+@keyframes spinSlow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes qrScan {
+  0%,
+  100% {
+    transform: translateY(-10%);
+    opacity: 0;
+  }
+  15% {
+    opacity: 1;
+  }
+  50% {
+    transform: translateY(100%);
+    opacity: 1;
+  }
+  85% {
+    opacity: 1;
+  }
+}
+
+.animate-spin-slow {
+  animation: spinSlow 5s linear infinite;
+}
+
+.animate-qr-scan {
+  animation: qrScan 2.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-modal-in,
+  .animate-backdrop-in {
+    animation: none !important;
+  }
+  .animate-spin-slow {
+    animation: none !important;
+  }
+  .animate-qr-scan {
+    display: none !important;
+  }
 }

@@ -81,6 +81,37 @@ export async function sendTextMessage(instanceName: string, number: string, text
   });
 }
 
+/** Envia uma imagem por URL (sem precisar baixar/re-subir base64) — usado pela
+ *  IA quando o cliente pede foto de um produto que já tem image_url salvo. */
+export async function sendImageByUrl(
+  instanceName: string,
+  number: string,
+  imageUrl: string,
+  caption?: string
+) {
+  return evolutionFetch(`/message/sendMedia/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      number,
+      mediatype: 'image',
+      mimetype: 'image/jpeg',
+      media: imageUrl,
+      caption: caption ?? '',
+    }),
+  });
+}
+
+/** Marca a mensagem recebida como lida (check azul do WhatsApp) — best-effort,
+ *  quem chama deve engolir o erro se a versão da Evolution API não suportar. */
+export async function markMessageAsRead(instanceName: string, remoteJid: string, messageId: string) {
+  return evolutionFetch(`/chat/markMessageAsRead/${instanceName}`, {
+    method: 'PUT',
+    body: JSON.stringify({
+      readMessages: [{ remoteJid, id: messageId, fromMe: false }],
+    }),
+  });
+}
+
 export type EvolutionMediaType = 'image' | 'audio' | 'video' | 'document';
 
 /** Deriva a categoria de mídia da Evolution API (e do enum message_type) a partir do MIME type. */

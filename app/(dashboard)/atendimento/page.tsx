@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Paperclip,
   FileText,
+  Brain,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
@@ -31,6 +32,7 @@ interface Conversation {
     name: string | null;
     push_name: string | null;
     phone: string;
+    ai_memory: string | null;
   } | null;
   last_message?: {
     content: string | null;
@@ -176,7 +178,7 @@ export default function AtendimentoPage() {
     const { data, error: loadError } = await supabase
       .from('conversations')
       .select(
-        'id, status, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone), messages(content, sender_type, created_at)'
+        'id, status, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
       )
       .eq('workspace_id', wsId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -732,6 +734,16 @@ export default function AtendimentoPage() {
                   )}
                 </div>
               </div>
+
+              {selectedConversation.contact?.ai_memory && (
+                <div className="px-6 py-3 bg-primary/5 border-b border-border flex items-start gap-2.5">
+                  <Brain className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
+                  <p className="text-xs text-foreground/80 whitespace-pre-line leading-relaxed">
+                    <span className="font-medium text-primary">Memória da IA sobre este cliente: </span>
+                    {selectedConversation.contact.ai_memory}
+                  </p>
+                </div>
+              )}
 
               {/* Mensagens */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-card">

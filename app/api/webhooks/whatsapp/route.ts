@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendTextMessage, getMediaBase64 } from '@/lib/evolution-api';
+import { sendTextMessage, getMediaBase64, sendImageByUrl, markMessageAsRead } from '@/lib/evolution-api';
 import { decryptSecret } from '@/lib/security/encrypt';
 import { callLlm, ChatMessage } from '@/lib/llm-client';
 import { AiProvider } from '@/lib/ai-models';
@@ -65,9 +65,75 @@ function buildSystemPrompt(profile: {
     'Responda sempre em português do Brasil, de forma natural para WhatsApp (mensagens curtas, sem markdown). ' +
       'Nunca invente informações, preços ou prazos que não tenha recebido de contexto. ' +
       'Fale apenas sobre os produtos e categorias reais desta loja, listados na Base de Conhecimento e no ' +
-      'catálogo de produtos abaixo — nunca mencione produto, categoria ou segmento que não esteja nessa lista.'
+      'catálogo de produtos abaixo — nunca mencione produto, categoria ou segmento que não esteja nessa lista. ' +
+      'Se o cliente perguntar sobre frete, prazo de entrega ou valor de envio, nunca invente ou estime um ' +
+      'valor — envie o link do produto (campo "Link" do catálogo) e peça para ele calcular o frete direto no ' +
+      'site, que já tem cálculo de frete em tempo real pelo CEP.'
   );
   return lines.join('\n');
+}
+
+const PHOTO_MARKER_RE = /\[FOTO:\s*(.+?)\]/gi;
+
+/** Extrai os marcadores `[FOTO: nome do produto]` da resposta da IA e devolve
+ *  o texto já limpo deles + a lista de nomes de produto pedidos. */
+function extractPhotoRequests(replyText: string): { cleanedText: string; productNames: string[] } {
+  const productNames: string[] = [];
+  const cleanedText = replyText
+    .replace(PHOTO_MARKER_RE, (_match, name) => {
+      productNames.push(String(name).trim());
+      return '';
+    })
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return { cleanedText, productNames };
+}
+
+/**
+ * Divide uma resposta longa em várias mensagens curtas, do jeito que uma
+ * pessoa digitaria no WhatsApp (blocos de até ~350 caracteres), em vez de
+ * mandar um único parágrafo gigante. Quebra primeiro por parágrafo (linha em
+ * branco); se um parágrafo sozinho ainda for grande demais, quebra por frase.
+ */
+function splitIntoWhatsappMessages(text: string, maxLen = 350, maxChunks = 4): string[] {
+  const paragraphs = text
+    .split(/\n\s*\n/)
+    .map((p) => p.trim())
+    .filter(Boolean);
+
+  const chunks: string[] = [];
+
+  for (const paragraph of paragraphs) {
+    if (paragraph.length <= maxLen) {
+      chunks.push(paragraph);
+      continue;
+    }
+
+    const sentences = paragraph.split(/(?<=[.!?])\s+/);
+    let current = '';
+    for (const sentence of sentences) {
+      const candidate = current ? `${current} ${sentence}` : sentence;
+      if (candidate.length > maxLen && current) {
+        chunks.push(current);
+        current = sentence;
+      } else {
+        current = candidate;
+      }
+    }
+    if (current) chunks.push(current);
+  }
+
+  if (chunks.length === 0) return [text];
+
+  // Nunca manda mais que maxChunks mensagens — o excedente entra no último bloco.
+  if (chunks.length > maxChunks) {
+    const head = chunks.slice(0, maxChunks - 1);
+    const tail = chunks.slice(maxChunks - 1).join('\n\n');
+    return [...head, tail];
+  }
+
+  return chunks;
 }
 
 function formatPrice(value: number | null): string {
@@ -85,7 +151,7 @@ function formatPrice(value: number | null): string {
 async function buildKnowledgeContext(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string
-): Promise<string> {
+): Promise<{ contextText: string; productImages: Map<string, { imageUrl: string; purchaseUrl: string | null }> }> {
   const [{ data: entries }, { data: products }] = await Promise.all([
     admin
       .from('knowledge_entries')
@@ -96,7 +162,9 @@ async function buildKnowledgeContext(
       .limit(20),
     admin
       .from('products')
-      .select('name, category, price, promotional_price, stock_quantity, description')
+      .select(
+        'name, category, price, promotional_price, stock_quantity, description, image_url, purchase_url'
+      )
       .eq('workspace_id', workspaceId)
       .eq('active', true)
       .order('updated_at', { ascending: false })
@@ -104,6 +172,7 @@ async function buildKnowledgeContext(
   ]);
 
   const blocks: string[] = [];
+  const productImages = new Map<string, { imageUrl: string; purchaseUrl: string | null }>();
 
   if (entries && entries.length > 0) {
     const lines = entries.map(
@@ -123,20 +192,34 @@ async function buildKnowledgeContext(
             : 'sem estoque'
           : '';
       const desc = p.description ? ` — ${p.description.slice(0, 150)}` : '';
+      const link = p.purchase_url ? ` — Link: ${p.purchase_url}` : '';
+
+      if (p.image_url) {
+        productImages.set(p.name.trim().toLowerCase(), {
+          imageUrl: p.image_url,
+          purchaseUrl: p.purchase_url,
+        });
+      }
+
       return `- ${p.name}${p.category ? ` (${p.category})` : ''}: ${price}${promo}${
         stock ? `, ${stock}` : ''
-      }${desc}`;
+      }${desc}${link}`;
     });
     blocks.push(`Catálogo de produtos da loja:\n${lines.join('\n')}`);
   }
 
-  if (blocks.length === 0) return '';
+  if (blocks.length === 0) return { contextText: '', productImages };
 
-  return (
+  const contextText =
     '\n\nUse as informações abaixo (Base de Conhecimento e catálogo de produtos) para responder o cliente ' +
-    'com dados reais. Nunca invente preço, estoque ou informação que não esteja aqui.\n\n' +
-    blocks.join('\n\n')
-  );
+    'com dados reais. Nunca invente preço, estoque ou informação que não esteja aqui. Quando o cliente pedir ' +
+    'link do produto ou do site, use o "Link" do produto listado. Quando o cliente pedir foto ou imagem de um ' +
+    'produto que tenha foto disponível (não precisa avisar quais têm foto — apenas tente), inclua ao final da ' +
+    'sua resposta, em uma linha própria, exatamente: [FOTO: Nome Exato do Produto] — uma linha para cada foto ' +
+    'pedida. Essas linhas são removidas antes de chegar ao cliente e disparam o envio real da imagem.\n\n' +
+    blocks.join('\n\n');
+
+  return { contextText, productImages };
 }
 
 interface EvolutionWebhookPayload {
@@ -247,9 +330,55 @@ interface AutoReplyParams {
   admin: ReturnType<typeof createAdminClient>;
   workspaceId: string;
   conversationId: string;
+  contactId: string;
   instanceName: string;
   phone: string;
   inputMessageId: string | null;
+}
+
+/**
+ * Best-effort: pede pro mesmo provider/modelo já configurado resumir o que
+ * vale lembrar sobre este cliente (preferências, o que já comprou, dores,
+ * objeções) e grava em contacts.ai_memory. É o equivalente nativo ao conceito
+ * de memória de longo prazo do mem0 (github.com/mem0ai/mem0), sem depender de
+ * um serviço externo — reaproveita o mesmo lib/llm-client.ts já usado pra
+ * responder o cliente.
+ */
+async function updateContactMemory(
+  admin: ReturnType<typeof createAdminClient>,
+  contactId: string,
+  existingMemory: string | null,
+  provider: AiProvider,
+  apiKey: string,
+  model: string,
+  latestExchange: string
+) {
+  try {
+    const prompt =
+      (existingMemory ? `Memória atual sobre este cliente:\n${existingMemory}\n\n` : '') +
+      `Última troca de mensagens:\n${latestExchange}\n\n` +
+      'Atualize a memória sobre este cliente em até 5 bullets curtos (preferências, o que já ' +
+      'comprou ou perguntou, objeções, dados de contato mencionados). Mantenha o que ainda for ' +
+      'relevante da memória atual e adicione o que for novo. Responda APENAS com os bullets, sem ' +
+      'comentários. Se não houver nada relevante para lembrar, responda exatamente "sem novidades".';
+
+    const updated = await callLlm(
+      provider,
+      apiKey,
+      model,
+      'Você mantém um resumo curto e útil sobre um cliente de e-commerce para o time de vendas/atendimento consultar depois.',
+      [{ role: 'user', content: prompt }]
+    );
+
+    if (updated.trim().toLowerCase() === 'sem novidades') return;
+
+    await admin
+      .from('contacts')
+      .update({ ai_memory: updated.trim(), ai_memory_updated_at: new Date().toISOString() })
+      .eq('id', contactId);
+  } catch (error) {
+    console.error('Erro ao atualizar memória do contato:', error);
+  }
 }
 
 /**
@@ -261,6 +390,7 @@ async function tryAutoReply({
   admin,
   workspaceId,
   conversationId,
+  contactId,
   instanceName,
   phone,
   inputMessageId,
@@ -328,13 +458,22 @@ async function tryAutoReply({
         content: (m.content || m.transcript) as string,
       }));
 
-    const knowledgeContext = profile.use_knowledge_base
+    const { data: contact } = await admin
+      .from('contacts')
+      .select('ai_memory')
+      .eq('id', contactId)
+      .maybeSingle();
+
+    const { contextText: knowledgeContext, productImages } = profile.use_knowledge_base
       ? await buildKnowledgeContext(admin, workspaceId)
+      : { contextText: '', productImages: new Map<string, { imageUrl: string; purchaseUrl: string | null }>() };
+    const memoryContext = contact?.ai_memory
+      ? `\n\nMemória sobre este cliente (o que já sabemos dele de conversas anteriores):\n${contact.ai_memory}`
       : '';
-    const systemPrompt = buildSystemPrompt(profile) + knowledgeContext;
+    const systemPrompt = buildSystemPrompt(profile) + knowledgeContext + memoryContext;
     const apiKey = decryptSecret(credential.encrypted_api_key);
 
-    const replyText = await callLlm(
+    const rawReply = await callLlm(
       credential.provider as AiProvider,
       apiKey,
       credential.model_id || '',
@@ -342,17 +481,47 @@ async function tryAutoReply({
       history
     );
 
-    await sendTextMessage(instanceName, phone, replyText);
+    const { cleanedText, productNames } = extractPhotoRequests(rawReply);
 
-    await admin.from('messages').insert([
-      {
-        workspace_id: workspaceId,
-        conversation_id: conversationId,
-        direction: 'outbound',
-        sender_type: 'ai',
-        content: replyText,
-      },
-    ]);
+    // Fotos pedidas pela IA (marcador [FOTO: nome]) vão antes do texto —
+    // sensação natural de "aqui estão as fotos, e..." em vez do contrário.
+    for (const name of productNames) {
+      const match = productImages.get(name.trim().toLowerCase());
+      if (!match) continue;
+      try {
+        await sendImageByUrl(instanceName, phone, match.imageUrl, name);
+        await admin.from('messages').insert([
+          {
+            workspace_id: workspaceId,
+            conversation_id: conversationId,
+            direction: 'outbound',
+            sender_type: 'ai',
+            message_type: 'image',
+            media_url: match.imageUrl,
+            media_caption: name,
+          },
+        ]);
+      } catch (err) {
+        console.error('Erro ao enviar foto de produto solicitada pela IA:', err);
+      }
+    }
+
+    const replyText = cleanedText || rawReply;
+    const messageChunks = splitIntoWhatsappMessages(replyText);
+
+    for (let i = 0; i < messageChunks.length; i++) {
+      if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1200));
+      await sendTextMessage(instanceName, phone, messageChunks[i]);
+      await admin.from('messages').insert([
+        {
+          workspace_id: workspaceId,
+          conversation_id: conversationId,
+          direction: 'outbound',
+          sender_type: 'ai',
+          content: messageChunks[i],
+        },
+      ]);
+    }
 
     await admin
       .from('conversations')
@@ -373,6 +542,17 @@ async function tryAutoReply({
         latency_ms: Date.now() - startedAt,
       },
     ]);
+
+    const lastCustomerMessage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
+    await updateContactMemory(
+      admin,
+      contactId,
+      contact?.ai_memory || null,
+      credential.provider as AiProvider,
+      apiKey,
+      credential.model_id || '',
+      `Cliente: ${lastCustomerMessage}\nIA: ${replyText}`
+    );
   } catch (error) {
     console.error('Erro na resposta automática da IA:', error);
     await admin
@@ -443,6 +623,14 @@ export async function POST(request: NextRequest) {
     const workspaceId = connection.workspace_id;
     const phone = remoteJid.replace(/@s\.whatsapp\.net$/, '').replace(/@g\.us$/, '');
     const pushName = payload.data.pushName || null;
+
+    // Marca a mensagem como lida no WhatsApp do cliente (check azul) — best-effort,
+    // não impede o processamento se a Evolution API rejeitar ou não suportar.
+    if (payload.data.key?.id) {
+      markMessageAsRead(instanceName, remoteJid, payload.data.key.id).catch((err) =>
+        console.error('Erro ao marcar mensagem como lida:', err)
+      );
+    }
 
     // Upsert de contato (cria se novo, atualiza push_name/last_contact_at se já existe)
     const { data: existingContact } = await admin
@@ -583,6 +771,7 @@ export async function POST(request: NextRequest) {
       admin,
       workspaceId,
       conversationId,
+      contactId,
       instanceName,
       phone,
       inputMessageId: insertedMessage?.id || null,

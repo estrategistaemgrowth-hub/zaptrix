@@ -2,11 +2,13 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { useRouter } from 'next/navigation';
 import {
   Ban,
   Edit2,
   FileText,
   Lock,
+  LogOut,
   MessageCircle,
   Package,
   Plus,
@@ -117,6 +119,12 @@ export default function MasterAdminPage() {
   const [showAuditLog, setShowAuditLog] = useState(false);
   const [search, setSearch] = useState('');
   const supabase = createClient();
+  const router = useRouter();
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
 
   const filteredWorkspaces = workspaces.filter((ws) => {
     if (!search.trim()) return true;
@@ -253,6 +261,14 @@ export default function MasterAdminPage() {
             >
               <Plus className="w-4 h-4" />
               Novo lojista
+            </button>
+            <button
+              onClick={handleLogout}
+              title="Sair"
+              className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-xl font-medium text-sm hover:bg-muted"
+            >
+              <LogOut className="w-4 h-4" />
+              Sair
             </button>
           </div>
         </div>

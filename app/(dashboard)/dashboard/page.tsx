@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { MessageCircle, Users, MessageSquare, TrendingUp, Zap, Check, Package, Clock } from 'lucide-react';
+import { MessageCircle, Users, MessageSquare, TrendingUp, Zap, Check, Package, Clock, AlertTriangle } from 'lucide-react';
 import { Sparkline } from '@/components/sparkline';
 import { BannerCard } from '@/components/banner-card';
 import { QuotaBar } from '@/components/quota-bar';
@@ -15,6 +15,12 @@ interface DashboardMetrics {
   totalMessages: number;
   /** Sum of `daily_message_limit` across connected WhatsApp connections that have one configured. 0 = no limit set anywhere. */
   dailyLimit: number;
+}
+
+interface WhatsappAlertState {
+  /** Já teve pelo menos uma conexão configurada alguma vez (não é o caso "nunca configurou"). */
+  hasConnection: boolean;
+  isConnected: boolean;
 }
 
 interface OnboardingStatus {
@@ -102,6 +108,10 @@ export default function DashboardPage() {
     funnel: { open: 0, follow_up: 0, won: 0, lost: 0 },
     avgAiResponseMs: null,
     topProducts: [],
+  });
+  const [whatsappAlert, setWhatsappAlert] = useState<WhatsappAlertState>({
+    hasConnection: false,
+    isConnected: false,
   });
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
@@ -201,6 +211,11 @@ export default function DashboardPage() {
         atender: (customerMessagesCount || 0) > 0,
       });
 
+      setWhatsappAlert({
+        hasConnection: (connections || []).length > 0,
+        isConnected: (connections || []).some((c) => c.status === 'connected'),
+      });
+
       const { data: conversationStatuses } = await supabase
         .from('conversations')
         .select('status')
@@ -268,6 +283,21 @@ export default function DashboardPage() {
           </p>
         </div>
       </div>
+
+      {!loading && whatsappAlert.hasConnection && !whatsappAlert.isConnected && (
+        <a
+          href="/configuracoes?section=whatsapp"
+          className="flex items-center gap-3 mb-6 p-4 bg-destructive/10 border border-destructive/30 rounded-2xl text-destructive hover:bg-destructive/15 transition-colors animate-fade-in"
+        >
+          <AlertTriangle className="w-5 h-5 flex-shrink-0" />
+          <div>
+            <p className="font-semibold text-sm">Seu WhatsApp está desconectado</p>
+            <p className="text-sm opacity-90">
+              A IA não está recebendo nem enviando mensagens agora. Toque aqui para reconectar.
+            </p>
+          </div>
+        </a>
+      )}
 
       <BannerCard
         className="mb-6 animate-fade-in"

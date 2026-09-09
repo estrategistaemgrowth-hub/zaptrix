@@ -189,6 +189,7 @@ export default function AtendimentoPage() {
    *  sem inventar uma segunda forma de buscar e-mail — reaproveita a mesma rota
    *  que a seção "Membros" de Configurações já usa (admin.auth.admin.getUserById). */
   const [memberDirectory, setMemberDirectory] = useState<Record<string, string>>({});
+  const [whatsappDisconnected, setWhatsappDisconnected] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -218,7 +219,13 @@ export default function AtendimentoPage() {
   useEffect(() => {
     if (!workspaceId) return;
     const interval = setInterval(() => loadConversations(workspaceId), 3000);
-    return () => clearInterval(interval);
+    // Status do WhatsApp muda bem menos que as conversas — intervalo mais
+    // espaçado, só pra não deixar o alerta de desconexão desatualizado.
+    const whatsappInterval = setInterval(() => loadWhatsappStatus(workspaceId), 15000);
+    return () => {
+      clearInterval(interval);
+      clearInterval(whatsappInterval);
+    };
   }, [workspaceId]);
 
   useEffect(() => {
@@ -250,12 +257,24 @@ export default function AtendimentoPage() {
         loadConversations(workspace.workspaceId),
         loadQuickReplies(workspace.workspaceId),
         loadMemberDirectory(),
+        loadWhatsappStatus(workspace.workspaceId),
       ]);
     } catch (err) {
       console.error('Erro ao carregar atendimento:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadWhatsappStatus(wsId: string) {
+    const { data: connections } = await supabase
+      .from('whatsapp_connections')
+      .select('status')
+      .eq('workspace_id', wsId);
+
+    const hasConnection = (connections || []).length > 0;
+    const isConnected = (connections || []).some((c) => c.status === 'connected');
+    setWhatsappDisconnected(hasConnection && !isConnected);
   }
 
   async function loadMemberDirectory() {
@@ -633,6 +652,18 @@ export default function AtendimentoPage() {
 
   return (
     <div className="p-2 flex flex-col h-[calc(100vh-2rem)]">
+      {whatsappDisconnected && (
+        <a
+          href="/configuracoes?section=whatsapp"
+          className="flex items-center gap-3 mb-4 p-3 bg-destructive/10 border border-destructive/30 rounded-xl text-destructive hover:bg-destructive/15 transition-colors flex-shrink-0"
+        >
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <p className="text-sm font-medium">
+            WhatsApp desconectado — a IA não está enviando nem recebendo mensagens. Toque para reconectar.
+          </p>
+        </a>
+      )}
+
       <div className="flex items-center justify-between gap-3 mb-4">
         <div className="flex items-center gap-3">
           <MessageCircle className="w-8 h-8 text-primary" />

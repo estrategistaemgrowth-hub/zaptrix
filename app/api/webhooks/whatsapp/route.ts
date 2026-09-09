@@ -481,6 +481,107 @@ async function classifyDealStage(
 }
 
 /**
+ * Best-effort: decide se esta troca deve ser transferida para um atendente
+ * humano (Roleta de Atendimento, configurada em Configurações > Roleta de
+ * Atendimento). Dispara em duas condições, qualquer uma basta:
+ *   (a) o LLM responde SIM para o prompt de transferência — cliente pediu
+ *       explicitamente um humano, demonstrou frustração/reclamação séria, ou
+ *       bateu em algum dos gatilhos adicionais que a loja descreveu em
+ *       `handoff_trigger_rules`;
+ *   (b) a conversa já estava `needs_review = true` (classificação INCERTO de
+ *       `classifyDealStage`) ANTES desta troca, e continua `true` depois dela
+ *       — ou seja, ficou incerta 2 vezes seguidas. Não exige uma tabela de
+ *       histórico nova: `classifyDealStage` só reseta `needs_review` para
+ *       false em GANHO/PERDIDO, nunca em CONTINUAR, então dois INCERTO
+ *       seguidos aparecem como o flag continuando `true` de uma chamada para
+ *       a outra.
+ * Quando dispara: desliga a IA na conversa e atribui o próximo atendente
+ * (role 'atendente' ou 'admin') em round-robin, usando
+ * `workspaces.last_assigned_member_id` como ponteiro da fila. Sem atendente
+ * cadastrado, não atribui nada e não quebra o fluxo. Erro aqui é só logado —
+ * a resposta da IA já foi enviada ao cliente antes desta função rodar.
+ */
+async function checkHumanHandoff(
+  admin: ReturnType<typeof createAdminClient>,
+  workspaceId: string,
+  conversationId: string,
+  profile: { handoff_enabled: boolean | null; handoff_trigger_rules: string | null },
+  provider: AiProvider,
+  apiKey: string,
+  model: string,
+  latestExchange: string,
+  wasNeedsReviewBefore: boolean
+) {
+  if (!profile.handoff_enabled) return;
+
+  try {
+    const extraRules = profile.handoff_trigger_rules?.trim()
+      ? profile.handoff_trigger_rules.trim()
+      : 'nenhum gatilho adicional configurado pela loja';
+
+    const prompt =
+      `Última troca de mensagens:\n${latestExchange}\n\n` +
+      'Considerando esta troca, o cliente está pedindo explicitamente para falar com um atendente humano, ' +
+      'demonstrando frustração/reclamação séria, OU alguma destas situações específicas configuradas pela ' +
+      `loja: ${extraRules}? Responda com APENAS uma palavra: SIM ou NAO.`;
+
+    const raw = await callLlm(
+      provider,
+      apiKey,
+      model,
+      'Você decide se uma conversa de atendimento no WhatsApp precisa ser transferida para um atendente ' +
+        'humano. Responda com uma única palavra, sem pontuação e sem comentários.',
+      [{ role: 'user', content: prompt }]
+    );
+
+    const explicitHandoff = raw.trim().toUpperCase().startsWith('SIM');
+
+    const { data: currentConversation } = await admin
+      .from('conversations')
+      .select('needs_review')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    const consecutiveUncertain = wasNeedsReviewBefore && !!currentConversation?.needs_review;
+
+    if (!explicitHandoff && !consecutiveUncertain) return;
+
+    await admin.from('conversations').update({ ai_enabled: false }).eq('id', conversationId);
+
+    const { data: attendants } = await admin
+      .from('workspace_members')
+      .select('user_id')
+      .eq('workspace_id', workspaceId)
+      .in('role', ['atendente', 'admin'])
+      .order('created_at', { ascending: true });
+
+    if (!attendants || attendants.length === 0) return;
+
+    const { data: workspace } = await admin
+      .from('workspaces')
+      .select('last_assigned_member_id')
+      .eq('id', workspaceId)
+      .maybeSingle();
+
+    const lastIndex = workspace?.last_assigned_member_id
+      ? attendants.findIndex((m) => m.user_id === workspace.last_assigned_member_id)
+      : -1;
+    const nextAttendant = attendants[(lastIndex + 1) % attendants.length];
+
+    await admin
+      .from('conversations')
+      .update({ assigned_to: nextAttendant.user_id })
+      .eq('id', conversationId);
+    await admin
+      .from('workspaces')
+      .update({ last_assigned_member_id: nextAttendant.user_id })
+      .eq('id', workspaceId);
+  } catch (error) {
+    console.error('Erro no handoff automático para atendente humano:', error);
+  }
+}
+
+/**
  * Gera e envia a resposta automática da IA para a mensagem recém-recebida.
  * Best-effort: qualquer falha aqui é logada mas não derruba o webhook, já que
  * a mensagem do cliente já foi salva com sucesso antes desta chamada.
@@ -499,11 +600,13 @@ async function tryAutoReply({
   try {
     const { data: conversation } = await admin
       .from('conversations')
-      .select('ai_enabled')
+      .select('ai_enabled, needs_review')
       .eq('id', conversationId)
       .maybeSingle();
 
     if (!conversation?.ai_enabled) return;
+
+    const wasNeedsReviewBefore = !!conversation.needs_review;
 
     const { data: profile } = await admin
       .from('ai_profiles')
@@ -648,6 +751,18 @@ async function tryAutoReply({
       apiKey,
       credential.model_id || '',
       `Cliente: ${lastCustomerMessageForStage}\nIA: ${replyText}`
+    );
+
+    await checkHumanHandoff(
+      admin,
+      workspaceId,
+      conversationId,
+      profile,
+      credential.provider as AiProvider,
+      apiKey,
+      credential.model_id || '',
+      `Cliente: ${lastCustomerMessageForStage}\nIA: ${replyText}`,
+      wasNeedsReviewBefore
     );
 
     await admin

@@ -27,19 +27,27 @@ import {
   Timer,
   ToggleLeft,
   ToggleRight,
+  CreditCard,
+  Receipt,
+  Download,
+  Shuffle,
 } from 'lucide-react';
 
-type Section = 'membros' | 'whatsapp' | 'ia';
+type Section = 'membros' | 'assinatura' | 'whatsapp' | 'roleta' | 'ia';
 
 const SECTION_GROUPS: { label: string; items: { id: Section; label: string; icon: typeof Users }[] }[] = [
   {
     label: 'GERAL',
-    items: [{ id: 'membros', label: 'Membros', icon: Users }],
+    items: [
+      { id: 'membros', label: 'Membros', icon: Users },
+      { id: 'assinatura', label: 'Minha Assinatura', icon: CreditCard },
+    ],
   },
   {
     label: 'COMUNICAÇÃO & IA',
     items: [
       { id: 'whatsapp', label: 'WhatsApp', icon: Smartphone },
+      { id: 'roleta', label: 'Roleta de Atendimento', icon: Shuffle },
       { id: 'ia', label: 'API Key da IA', icon: Zap },
     ],
   },
@@ -73,6 +81,75 @@ interface LlmCredential {
   model_id: string | null;
   is_primary: boolean;
   enabled: boolean;
+}
+
+interface PlanInfo {
+  id: string;
+  name: string;
+  price_cents: number;
+  product_limit: number;
+  member_limit: number;
+}
+
+interface WorkspaceBilling {
+  plan_id: string | null;
+  subscription_status: 'trial' | 'active' | 'overdue' | 'canceled';
+  subscription_expires_at: string | null;
+  plan: PlanInfo | null;
+}
+
+interface Invoice {
+  id: string;
+  amount_cents: number;
+  due_date: string;
+  status: 'pending' | 'paid' | 'overdue';
+  file_url: string | null;
+  notes: string | null;
+  created_at: string;
+}
+
+function formatCents(cents: number): string {
+  return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+/** ≤7 dias ou já vencido pede destaque visual — sem vencimento definido é neutro. */
+function subscriptionDueTone(expiresAt: string | null): 'destructive' | 'warning' | 'neutral' {
+  if (!expiresAt) return 'neutral';
+  const diffDays = (new Date(expiresAt).getTime() - Date.now()) / 86_400_000;
+  if (diffDays < 0) return 'destructive';
+  if (diffDays <= 7) return 'warning';
+  return 'neutral';
+}
+
+function subscriptionStatusBadge(
+  status: WorkspaceBilling['subscription_status']
+): { label: string; active: boolean; tone: 'neutral' | 'warning' | 'destructive' } {
+  switch (status) {
+    case 'active':
+      return { label: 'Ativa', active: true, tone: 'neutral' };
+    case 'trial':
+      return { label: 'Período de teste', active: false, tone: 'warning' };
+    case 'overdue':
+      return { label: 'Vencida', active: false, tone: 'destructive' };
+    case 'canceled':
+      return { label: 'Cancelada', active: false, tone: 'destructive' };
+    default:
+      return { label: status, active: false, tone: 'neutral' };
+  }
+}
+
+function invoiceStatusBadge(
+  status: Invoice['status']
+): { label: string; active: boolean; tone: 'neutral' | 'warning' | 'destructive' } {
+  switch (status) {
+    case 'paid':
+      return { label: 'Paga', active: true, tone: 'neutral' };
+    case 'overdue':
+      return { label: 'Vencida', active: false, tone: 'destructive' };
+    case 'pending':
+    default:
+      return { label: 'Pendente', active: false, tone: 'warning' };
+  }
 }
 
 export default function ConfiguracoesPage() {
@@ -114,9 +191,26 @@ export default function ConfiguracoesPage() {
   const [savingConnection, setSavingConnection] = useState(false);
   const [connectionError, setConnectionError] = useState('');
 
+  const [workspaceBilling, setWorkspaceBilling] = useState<WorkspaceBilling | null>(null);
+  const [productCount, setProductCount] = useState(0);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+
+  const [aiProfileId, setAiProfileId] = useState<string | null>(null);
+  const [handoffEnabled, setHandoffEnabled] = useState(false);
+  const [handoffTriggerRules, setHandoffTriggerRules] = useState('');
+  const [savingHandoff, setSavingHandoff] = useState(false);
+  const [handoffError, setHandoffError] = useState('');
+
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get('section') as Section | null;
-    if (section === 'whatsapp' || section === 'ia' || section === 'membros') {
+    if (
+      section === 'whatsapp' ||
+      section === 'ia' ||
+      section === 'membros' ||
+      section === 'assinatura' ||
+      section === 'roleta'
+    ) {
       setActiveSection(section);
     }
   }, []);
@@ -161,11 +255,116 @@ export default function ConfiguracoesPage() {
         loadMembers(workspace.workspaceId),
         loadConnections(workspace.workspaceId),
         loadCredentials(workspace.workspaceId),
+        loadBilling(workspace.workspaceId),
+        loadHandoffSettings(workspace.workspaceId),
       ]);
     } catch (err) {
       console.error('Erro ao carregar configurações:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadBilling(wsId: string) {
+    const [{ data: wsData, error: wsError }, { count: productsCount }, { data: invoicesData, error: invoicesError }] =
+      await Promise.all([
+        supabase
+          .from('workspaces')
+          .select(
+            'plan_id, subscription_status, subscription_expires_at, plans(id, name, price_cents, product_limit, member_limit)'
+          )
+          .eq('id', wsId)
+          .maybeSingle(),
+        supabase.from('products').select('id', { count: 'exact', head: true }).eq('workspace_id', wsId),
+        supabase
+          .from('invoices')
+          .select('id, amount_cents, due_date, status, file_url, notes, created_at')
+          .eq('workspace_id', wsId)
+          .order('due_date', { ascending: false }),
+      ]);
+
+    if (wsError) {
+      console.error('Erro ao carregar dados de assinatura:', wsError);
+    } else if (wsData) {
+      const planRaw = (wsData as unknown as { plans: PlanInfo | PlanInfo[] | null }).plans;
+      const plan: PlanInfo | null = Array.isArray(planRaw) ? planRaw[0] ?? null : planRaw ?? null;
+      setWorkspaceBilling({
+        plan_id: wsData.plan_id,
+        subscription_status: wsData.subscription_status,
+        subscription_expires_at: wsData.subscription_expires_at,
+        plan,
+      });
+    }
+
+    setProductCount(productsCount || 0);
+
+    if (invoicesError) {
+      console.error('Erro ao carregar faturas:', invoicesError);
+    }
+    setInvoices(invoicesData || []);
+  }
+
+  async function loadHandoffSettings(wsId: string) {
+    const { data, error: loadError } = await supabase
+      .from('ai_profiles')
+      .select('id, handoff_enabled, handoff_trigger_rules')
+      .eq('workspace_id', wsId)
+      .maybeSingle();
+
+    if (loadError) {
+      console.error('Erro ao carregar configuração de handoff:', loadError);
+      return;
+    }
+
+    setAiProfileId(data?.id ?? null);
+    setHandoffEnabled(data?.handoff_enabled ?? false);
+    setHandoffTriggerRules(data?.handoff_trigger_rules ?? '');
+  }
+
+  async function handleSaveHandoff(e: React.FormEvent) {
+    e.preventDefault();
+    if (!workspaceId) return;
+
+    setSavingHandoff(true);
+    setHandoffError('');
+
+    const payload = {
+      workspace_id: workspaceId,
+      handoff_enabled: handoffEnabled,
+      handoff_trigger_rules: handoffTriggerRules || null,
+    };
+
+    const { error: saveError } = aiProfileId
+      ? await supabase.from('ai_profiles').update(payload).eq('id', aiProfileId)
+      : await supabase.from('ai_profiles').insert([payload]);
+
+    if (saveError) {
+      setHandoffError('Erro ao salvar: ' + saveError.message);
+      setSavingHandoff(false);
+      return;
+    }
+
+    setSavingHandoff(false);
+    await loadHandoffSettings(workspaceId);
+  }
+
+  async function handleDownloadInvoice(invoiceId: string) {
+    setDownloadingInvoiceId(invoiceId);
+
+    try {
+      const res = await fetch(`/api/invoices/download?invoiceId=${invoiceId}`);
+      const result = await res.json();
+
+      if (!res.ok) {
+        alert('Erro ao baixar fatura: ' + (result.error || ''));
+        return;
+      }
+
+      window.open(result.url, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      alert('Erro inesperado ao baixar fatura');
+    } finally {
+      setDownloadingInvoiceId(null);
     }
   }
 
@@ -437,6 +636,8 @@ export default function ConfiguracoesPage() {
     if (workspaceId) await loadCredentials(workspaceId);
   }
 
+  const attendantCount = members.filter((m) => m.role === 'atendente' || m.role === 'admin').length;
+
   return (
     <div className="p-2">
       <div className="mb-6">
@@ -676,6 +877,131 @@ export default function ConfiguracoesPage() {
         </div>
         )}
 
+        {activeSection === 'assinatura' && (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6">
+          <div className="flex items-center gap-3 mb-6">
+            <CreditCard className="w-5 h-5 text-primary" />
+            <h2 className="text-xl font-semibold text-foreground">Minha Assinatura</h2>
+          </div>
+
+          {!workspaceBilling?.plan ? (
+            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
+              Nenhum plano definido — fale com o suporte.
+            </div>
+          ) : (
+            <div className="mb-6 p-4 bg-muted rounded-xl flex items-center justify-between gap-4 flex-wrap">
+              <div>
+                <p className="text-sm text-muted-foreground">Plano atual</p>
+                <p className="text-lg font-semibold text-foreground">{workspaceBilling.plan.name}</p>
+              </div>
+              <div className="text-right">
+                <p className="text-sm text-muted-foreground">Valor</p>
+                <p className="text-lg font-semibold text-foreground">
+                  {formatCents(workspaceBilling.plan.price_cents)}
+                  <span className="text-sm font-normal text-muted-foreground">/mês</span>
+                </p>
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
+            <div className="p-4 border border-border rounded-xl bg-muted">
+              <QuotaBar
+                label="Produtos cadastrados"
+                current={productCount}
+                max={workspaceBilling?.plan?.product_limit ?? null}
+              />
+            </div>
+            <div className="p-4 border border-border rounded-xl bg-muted">
+              <QuotaBar
+                label="Membros da equipe"
+                current={members.length}
+                max={workspaceBilling?.plan?.member_limit ?? null}
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center justify-between gap-4 flex-wrap mb-6 p-4 border border-border rounded-xl bg-muted">
+            <div>
+              <p className="text-sm text-muted-foreground mb-1.5">Status da assinatura</p>
+              {workspaceBilling &&
+                (() => {
+                  const badge = subscriptionStatusBadge(workspaceBilling.subscription_status);
+                  return <StatusBadge label={badge.label} active={badge.active} tone={badge.tone} />;
+                })()}
+            </div>
+            <div className="text-right">
+              <p className="text-sm text-muted-foreground mb-1.5">Vencimento</p>
+              {(() => {
+                const tone = subscriptionDueTone(workspaceBilling?.subscription_expires_at ?? null);
+                return (
+                  <p
+                    className={`text-base font-semibold ${
+                      tone === 'destructive'
+                        ? 'text-destructive'
+                        : tone === 'warning'
+                        ? 'text-amber-600'
+                        : 'text-foreground'
+                    }`}
+                  >
+                    {workspaceBilling?.subscription_expires_at
+                      ? new Date(workspaceBilling.subscription_expires_at).toLocaleDateString('pt-BR')
+                      : 'Sem vencimento definido'}
+                  </p>
+                );
+              })()}
+            </div>
+          </div>
+
+          <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+            <Receipt className="w-4 h-4 text-primary" /> Faturas
+          </h3>
+
+          <div className="space-y-2">
+            {invoices.length === 0 ? (
+              <div className="p-8 text-center">
+                <Receipt className="w-16 h-16 text-muted-foreground/40 mx-auto mb-3" />
+                <p className="text-foreground font-medium">Nenhuma fatura emitida ainda</p>
+              </div>
+            ) : (
+              invoices.map((invoice) => {
+                const badge = invoiceStatusBadge(invoice.status);
+                return (
+                  <div
+                    key={invoice.id}
+                    className="flex items-center justify-between gap-4 p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground">{formatCents(invoice.amount_cents)}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Vencimento:{' '}
+                        {new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString('pt-BR')}
+                      </p>
+                      {invoice.notes && (
+                        <p className="text-xs text-muted-foreground mt-0.5">{invoice.notes}</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-3 flex-shrink-0">
+                      <StatusBadge label={badge.label} active={badge.active} tone={badge.tone} />
+                      {invoice.file_url && (
+                        <button
+                          onClick={() => handleDownloadInvoice(invoice.id)}
+                          disabled={downloadingInvoiceId === invoice.id}
+                          className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-foreground bg-white hover:border-primary/40 hover:text-primary disabled:opacity-50 transition-colors duration-150"
+                        >
+                          <Download className="w-3.5 h-3.5" />
+                          {downloadingInvoiceId === invoice.id ? 'Gerando...' : 'Baixar'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+        )}
+
         {activeSection === 'whatsapp' && (
         <div className="bg-card border border-border rounded-2xl shadow-sm p-6">
           <div className="flex items-center justify-between mb-6">
@@ -892,6 +1218,103 @@ export default function ConfiguracoesPage() {
             </div>,
             document.body
           )}
+        </div>
+        )}
+
+        {activeSection === 'roleta' && (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <Shuffle className="w-5 h-5 text-primary" />
+              <h2 className="text-xl font-semibold text-foreground">Roleta de Atendimento</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setHandoffEnabled(!handoffEnabled)}
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+                handoffEnabled ? 'gradient-brand text-white shadow-sm' : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {handoffEnabled ? <ToggleRight className="w-5 h-5" /> : <ToggleLeft className="w-5 h-5" />}
+              {handoffEnabled ? 'Ativar transferência para humano: Ativado' : 'Ativar transferência para humano: Desativado'}
+            </button>
+          </div>
+
+          <p className="text-sm text-muted-foreground mb-6">
+            Quando ativado, a IA transfere a conversa para um atendente humano automaticamente e para
+            de responder — a partir daí o atendimento é manual, até alguém ligar a IA de novo na
+            conversa (em Atendimento).
+          </p>
+
+          <div className="mb-6 p-4 bg-muted rounded-xl">
+            <p className="text-sm font-medium text-foreground mb-2">Gatilhos sempre ativos</p>
+            <ul className="space-y-1.5 text-sm text-muted-foreground">
+              <li className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                Cliente pede explicitamente para falar com um atendente
+              </li>
+              <li className="flex items-start gap-2">
+                <span className="w-1.5 h-1.5 rounded-full bg-primary mt-1.5 flex-shrink-0" />
+                A IA ficou incerta sobre o andamento do negócio em respostas consecutivas
+              </li>
+            </ul>
+          </div>
+
+          <form onSubmit={handleSaveHandoff} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Gatilhos adicionais
+              </label>
+              <textarea
+                value={handoffTriggerRules}
+                onChange={(e) => setHandoffTriggerRules(e.target.value)}
+                className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                placeholder="ex: cliente demonstrando raiva ou fazendo reclamação grave; pergunta técnica que foge do catálogo"
+                rows={3}
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Descreva outras situações em que a IA deve transferir a conversa, além dos gatilhos
+                sempre ativos acima.
+              </p>
+            </div>
+
+            {handoffError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                {handoffError}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={savingHandoff}
+              className="px-6 py-2 btn-gradient font-medium disabled:opacity-50"
+            >
+              {savingHandoff ? 'Salvando...' : 'Salvar'}
+            </button>
+          </form>
+
+          <div
+            className={`mt-6 p-4 rounded-xl border flex items-start gap-3 ${
+              attendantCount === 0 ? 'bg-amber-50 border-amber-200' : 'bg-muted border-border'
+            }`}
+          >
+            <Users
+              className={`w-5 h-5 flex-shrink-0 mt-0.5 ${
+                attendantCount === 0 ? 'text-amber-600' : 'text-muted-foreground'
+              }`}
+            />
+            <div className="text-sm">
+              <p className="font-medium text-foreground">
+                {attendantCount} {attendantCount === 1 ? 'atendente cadastrado' : 'atendentes cadastrados'}
+              </p>
+              {attendantCount === 0 && (
+                <p className="text-amber-800 mt-0.5">
+                  Nenhum atendente cadastrado — a roleta não vai funcionar até você adicionar um em
+                  Membros.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
         )}
 

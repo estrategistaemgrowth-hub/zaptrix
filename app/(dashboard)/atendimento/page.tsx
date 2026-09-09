@@ -26,6 +26,7 @@ import {
   Image as ImageIcon,
   Video,
   Mic,
+  UserRound,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
@@ -40,6 +41,7 @@ interface Conversation {
   reopened_count: number | null;
   last_message_at: string | null;
   unread_count: number | null;
+  assigned_to: string | null;
   contact: {
     name: string | null;
     push_name: string | null;
@@ -183,6 +185,10 @@ export default function AtendimentoPage() {
   const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
   const [showQuickRepliesPopover, setShowQuickRepliesPopover] = useState(false);
   const [showQuickRepliesModal, setShowQuickRepliesModal] = useState(false);
+  /** user_id -> e-mail, para resolver `conversations.assigned_to` num nome exibível
+   *  sem inventar uma segunda forma de buscar e-mail — reaproveita a mesma rota
+   *  que a seção "Membros" de Configurações já usa (admin.auth.admin.getUserById). */
+  const [memberDirectory, setMemberDirectory] = useState<Record<string, string>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -240,11 +246,31 @@ export default function AtendimentoPage() {
       }
 
       setWorkspaceId(workspace.workspaceId);
-      await Promise.all([loadConversations(workspace.workspaceId), loadQuickReplies(workspace.workspaceId)]);
+      await Promise.all([
+        loadConversations(workspace.workspaceId),
+        loadQuickReplies(workspace.workspaceId),
+        loadMemberDirectory(),
+      ]);
     } catch (err) {
       console.error('Erro ao carregar atendimento:', err);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function loadMemberDirectory() {
+    try {
+      const res = await fetch('/api/workspace/members');
+      const result = await res.json();
+      if (!res.ok) return;
+
+      const map: Record<string, string> = {};
+      for (const m of result.members || []) {
+        map[m.user_id] = m.email || 'Sem e-mail';
+      }
+      setMemberDirectory(map);
+    } catch (err) {
+      console.error('Erro ao carregar diretório de membros:', err);
     }
   }
 
@@ -267,7 +293,7 @@ export default function AtendimentoPage() {
     const { data, error: loadError } = await supabase
       .from('conversations')
       .select(
-        'id, status, needs_review, reopened_count, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
+        'id, status, needs_review, reopened_count, ai_enabled, last_message_at, unread_count, assigned_to, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
       )
       .eq('workspace_id', wsId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -533,6 +559,14 @@ export default function AtendimentoPage() {
     return contact?.name || contact?.push_name || contact?.phone || 'Contato';
   }
 
+  /** Nome exibível de quem a conversa está atribuída (Roleta de Atendimento) —
+   *  usa só o prefixo do e-mail para caber no card do Kanban/lista. */
+  function assignedToLabel(userId: string | null): string | null {
+    if (!userId) return null;
+    const email = memberDirectory[userId];
+    return email ? email.split('@')[0] : 'Atendente';
+  }
+
   async function handleChangeStatus(conversationId: string, newStatus: Conversation['status']) {
     if (!workspaceId) return;
 
@@ -738,6 +772,12 @@ export default function AtendimentoPage() {
                             className="!py-0.5 !text-[10px]"
                           />
                         )}
+                        {conv.assigned_to && (
+                          <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                            <UserRound className="w-3 h-3" />
+                            {assignedToLabel(conv.assigned_to)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -824,6 +864,12 @@ export default function AtendimentoPage() {
                                   className="!py-0.5 !text-[11px]"
                                 />
                               )}
+                              {conv.assigned_to && (
+                                <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                  <UserRound className="w-3 h-3" />
+                                  {assignedToLabel(conv.assigned_to)}
+                                </span>
+                              )}
                             </div>
                             {typeof conv.unread_count === 'number' && conv.unread_count > 0 && (
                               <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 flex items-center justify-center gradient-brand text-white text-[11px] font-semibold rounded-full shadow-sm">
@@ -909,6 +955,12 @@ export default function AtendimentoPage() {
                     <p className="text-sm text-muted-foreground">
                       {selectedConversation.contact?.phone}
                     </p>
+                    {selectedConversation.assigned_to && (
+                      <p className="flex items-center gap-1 text-xs text-primary font-medium mt-1">
+                        <UserRound className="w-3 h-3" />
+                        Atribuído a: {assignedToLabel(selectedConversation.assigned_to)}
+                      </p>
+                    )}
                   </div>
 
                   {selectedConversation.contact?.ai_memory && (

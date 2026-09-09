@@ -37,6 +37,7 @@ interface Conversation {
   status: 'open' | 'closed' | 'archived' | 'follow_up' | 'won' | 'lost';
   ai_enabled: boolean;
   needs_review: boolean;
+  reopened_count: number | null;
   last_message_at: string | null;
   unread_count: number | null;
   contact: {
@@ -266,7 +267,7 @@ export default function AtendimentoPage() {
     const { data, error: loadError } = await supabase
       .from('conversations')
       .select(
-        'id, status, needs_review, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
+        'id, status, needs_review, reopened_count, ai_enabled, last_message_at, unread_count, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
       )
       .eq('workspace_id', wsId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -725,6 +726,15 @@ export default function AtendimentoPage() {
                             icon={AlertTriangle}
                             active={false}
                             tone="warning"
+                            className="!py-0.5 !text-[10px]"
+                          />
+                        )}
+                        {!!conv.reopened_count && (
+                          <StatusBadge
+                            label="Reaberta"
+                            icon={RefreshCw}
+                            active={false}
+                            tone="neutral"
                             className="!py-0.5 !text-[10px]"
                           />
                         )}

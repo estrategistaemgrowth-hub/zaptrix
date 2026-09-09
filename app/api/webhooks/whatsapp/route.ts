@@ -856,13 +856,17 @@ export async function POST(request: NextRequest) {
       contactId = newContact.id;
     }
 
-    // Reaproveita conversa aberta existente; se não houver, cria uma nova
+    // Reaproveita a conversa mais recente do contato, seja qual for o status —
+    // sem isso, uma conversa fechada/perdida/ganha virava um card duplicado
+    // sempre que o mesmo cliente escrevia de novo. Se estava fechada, reabre
+    // e marca reopened_count (vira a tag "Reaberta" na UI).
     const { data: existingConversation } = await admin
       .from('conversations')
-      .select('id, unread_count')
+      .select('id, status, unread_count, reopened_count')
       .eq('workspace_id', workspaceId)
       .eq('contact_id', contactId)
-      .eq('status', 'open')
+      .order('created_at', { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     let conversationId: string;
@@ -871,6 +875,16 @@ export async function POST(request: NextRequest) {
     if (existingConversation) {
       conversationId = existingConversation.id;
       nextUnreadCount = (existingConversation.unread_count || 0) + 1;
+
+      if (existingConversation.status !== 'open' && existingConversation.status !== 'follow_up') {
+        await admin
+          .from('conversations')
+          .update({
+            status: 'open',
+            reopened_count: (existingConversation.reopened_count || 0) + 1,
+          })
+          .eq('id', conversationId);
+      }
     } else {
       const { data: newConversation, error: createConvError } = await admin
         .from('conversations')

@@ -62,8 +62,12 @@ function buildSystemPrompt(profile: {
   if (profile.forbidden_topics) lines.push(`Tópicos proibidos (nunca falar disso): ${profile.forbidden_topics}`);
   if (profile.business_rules) lines.push(`Regras de negócio: ${profile.business_rules}`);
   lines.push(
-    'Responda sempre em português do Brasil, de forma natural para WhatsApp (mensagens curtas, sem markdown). ' +
-      'Nunca invente informações, preços ou prazos que não tenha recebido de contexto. ' +
+    'Responda sempre em português do Brasil, como uma pessoa real digitando no WhatsApp, nunca como um ' +
+      'catálogo ou menu robótico. Escreva de forma humanizada e natural, com frases curtas e o tom de quem ' +
+      'realmente está conversando. Nunca use markdown de blog/documento: não use **negrito com dois ' +
+      'asteriscos**, não use listas com "-" ou "*" no início da linha, não use headers com "#". Se quiser dar ' +
+      'destaque a algo, use no máximo 1 ou 2 vezes por mensagem a sintaxe nativa do WhatsApp: um único ' +
+      'asterisco de cada lado, tipo *assim*. Nunca invente informações, preços ou prazos que não tenha recebido de contexto. ' +
       'Fale apenas sobre os produtos e categorias reais desta loja, listados na Base de Conhecimento e no ' +
       'catálogo de produtos abaixo — nunca mencione produto, categoria ou segmento que não esteja nessa lista. ' +
       'Se o cliente perguntar sobre frete, prazo de entrega ou valor de envio, nunca invente ou estime um ' +
@@ -78,11 +82,24 @@ function buildSystemPrompt(profile: {
 
 const PHOTO_MARKER_RE = /\[FOTO:\s*(.+?)\]/gi;
 
+/**
+ * Rede de segurança mecânica: mesmo com a instrução no prompt, o modelo às
+ * vezes ainda escreve markdown de blog. Converte pro que o WhatsApp realmente
+ * renderiza (ou apenas remove, quando não há equivalente nativo).
+ */
+function stripMarkdownForWhatsapp(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '*$1*') // **negrito** -> *negrito* (sintaxe nativa do WhatsApp)
+    .replace(/^#{1,6}\s+/gm, '') // headers markdown
+    .replace(/^[-*]\s+/gm, '• ') // lista markdown -> bullet simples
+    .replace(/`{1,3}/g, ''); // crases de código, sem equivalente no WhatsApp
+}
+
 /** Extrai os marcadores `[FOTO: nome do produto]` da resposta da IA e devolve
  *  o texto já limpo deles + a lista de nomes de produto pedidos. */
 function extractPhotoRequests(replyText: string): { cleanedText: string; productNames: string[] } {
   const productNames: string[] = [];
-  const cleanedText = replyText
+  const cleanedText = stripMarkdownForWhatsapp(replyText)
     .replace(PHOTO_MARKER_RE, (_match, name) => {
       productNames.push(String(name).trim());
       return '';

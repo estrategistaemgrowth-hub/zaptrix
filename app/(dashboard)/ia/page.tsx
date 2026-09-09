@@ -18,6 +18,7 @@ interface AIProfile {
   forbidden_topics: string | null;
   business_rules: string | null;
   enabled: boolean;
+  use_knowledge_base: boolean;
 }
 
 const emptyForm = {
@@ -32,6 +33,7 @@ const emptyForm = {
   forbidden_topics: '',
   business_rules: '',
   enabled: true,
+  use_knowledge_base: true,
 };
 
 interface AgentTemplate {
@@ -209,6 +211,7 @@ export default function IaPage() {
           forbidden_topics: data.forbidden_topics || '',
           business_rules: data.business_rules || '',
           enabled: data.enabled,
+          use_knowledge_base: data.use_knowledge_base ?? true,
         });
       }
     } catch (err) {
@@ -334,6 +337,39 @@ export default function IaPage() {
                 </button>
               );
             })}
+          </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h3 className="text-lg font-semibold text-foreground mb-1">
+                Usar Conhecimento e Produtos
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Quando ativado, a IA consulta a Base de Conhecimento e o catálogo de Produtos
+                (preço, estoque, descrição) para responder os clientes no WhatsApp com informação
+                real, em vez de respostas genéricas.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setFormData({ ...formData, use_knowledge_base: !formData.use_knowledge_base })
+              }
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex-shrink-0 ${
+                formData.use_knowledge_base
+                  ? 'gradient-brand text-white shadow-sm'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {formData.use_knowledge_base ? (
+                <ToggleRight className="w-5 h-5" />
+              ) : (
+                <ToggleLeft className="w-5 h-5" />
+              )}
+              {formData.use_knowledge_base ? 'Ativado' : 'Desativado'}
+            </button>
           </div>
         </div>
 

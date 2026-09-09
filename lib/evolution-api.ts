@@ -73,6 +73,14 @@ export async function setWebhook(instanceName: string, webhookUrl: string, webho
   });
 }
 
+/** Envia uma mensagem de texto pelo número conectado da instância. */
+export async function sendTextMessage(instanceName: string, number: string, text: string) {
+  return evolutionFetch(`/message/sendText/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({ number, text }),
+  });
+}
+
 /** Gera um nome de instância único, prefixado para isolar do resto da Evolution API compartilhada. */
 export function generateInstanceName(workspaceId: string): string {
   return `zaptrix-${workspaceId.slice(0, 8)}-${Date.now().toString(36)}`;

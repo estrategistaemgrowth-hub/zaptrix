@@ -835,7 +835,7 @@ export default function ProdutosPage() {
                 <div
                   key={product.id}
                   onClick={() => setDetailProduct(product)}
-                  className={`bg-card border border-border rounded-2xl shadow-sm p-6 transition-all duration-200 hover:shadow-lg hover:scale-[1.02] cursor-pointer ${
+                  className={`card-hover-glow bg-card border border-border rounded-2xl shadow-sm p-6 cursor-pointer ${
                     outOfStock ? 'border-l-4 border-l-destructive' : ''
                   }`}
                 >
@@ -1001,7 +1001,7 @@ export default function ProdutosPage() {
                       <tr
                         key={product.id}
                         onClick={() => setDetailProduct(product)}
-                        className={`cursor-pointer hover:bg-muted transition-colors ${
+                        className={`cursor-pointer hover:bg-primary/5 transition-colors duration-200 ${
                           outOfStock ? 'border-l-4 border-l-destructive' : ''
                         }`}
                       >

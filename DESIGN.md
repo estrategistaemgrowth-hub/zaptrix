@@ -1,38 +1,43 @@
 # Design
 
-## Theme
-
-Light-first product surface. Background is a cool near-white (`--background: #f0f4fa`), cards are pure white (`--card: #ffffff`) with a 1px `--border` (`#e2e8f0`) and `shadow-sm` — never both a heavy border and a heavy shadow. Dark mode exists via `prefers-color-scheme`/`[data-theme]` but is not the design target of this pass.
+Captured from the existing codebase (`app/globals.css`, `components/`, `app/(dashboard)/**`). Zaptrix uses Next.js 16 (App Router) + TypeScript + Tailwind v4 + Supabase.
 
 ## Color
 
-- `--primary #2563eb` / `--secondary #1d4ed8` — solid, used for primary buttons, active nav state, focus rings.
-- `--tertiary #7dd3fc` — light accent, sparingly.
-- Brand gradient (new, from the logo): cyan `#22D3EE` → blue `#3B82F6` → royal `#1D4ED8`, `to bottom right`. Reserved for 1-2 deliberate accents per screen (see `.gradient-brand` utility).
-- `--destructive #d01d1c` — errors, out-of-stock, attention rows.
-- `--success #0c7a3a`, `--warning #9b5a00`, `--info #2563eb` — semantic text/icon tints only, never raw Tailwind `green-500` etc.
-- Metric-card icon badges use tinted pastels (`bg-blue-100`/`text-blue-600`, `bg-emerald-100`/`text-emerald-600`, `bg-amber-100`/`text-amber-600`) — keep this pattern, it's already correct (not the gray-badge cliché).
+- Brand gradient (signature, 1-2 deliberate accents per screen, never a background wash):
+  `linear-gradient(to bottom right, #22d3ee, #3b82f6, #1d4ed8)` — exposed as `.gradient-brand` and baked into `.btn-gradient`.
+- Core tokens (`:root` in `app/globals.css`): `--primary: #2563eb`, `--secondary: #1d4ed8`, `--tertiary: #7dd3fc`, `--accent: #2563eb`, `--ring: #2563eb`.
+- Surfaces: light background `--background: #f0f4fa`, `--card: #ffffff`, `--border: #e2e8f0`, `--muted: #f1f5f9`. Dark-mode variant exists (`prefers-color-scheme` + `[data-theme]`) but the dashboard's default working mode is light — dark cards are the deliberate exception (banner/highlight card), not the norm.
+- Semantic: `--success: #0c7a3a`, `--warning: #9b5a00`, `--destructive: #d01d1c`, `--info: #2563eb`.
+- Chart palette: `--chart-1..5` (`#2563eb`, `#22d3ee`, `#7dd3fc`, `#9b5a00`, `#9b5a00`).
+- Anti-reference: no lime/neon-green, no purple as brand color, no pure-black shadows (use brand-blue at low opacity instead).
 
 ## Typography
 
-`--font-sans: Arial, sans-serif` system-wide (no font pairing in this app; do not introduce a second family). Hierarchy is carried by size/weight: `text-3xl font-bold` page titles, `text-lg font-semibold` section headers, `text-sm` body/labels, `text-xs text-muted-foreground` hints.
+- `--font-sans` / `--font-mono`: Arial fallback stack (project doesn't load a custom webfont yet).
+
+## Radii & Motion
+
+- Radius scale: `--radius-sm: 12px`, `--radius-md: 24px`, `--radius-lg: 32px`, `--radius-xl: 48px`. Pills (`rounded-full`) reserved for CTAs/badges.
+- Duration scale: `--duration-faster: 150ms`, `--duration-gentle: 350ms`, `--duration-slow: 650ms`.
+- Existing keyframes: `fadeIn` (opacity + translateY, used as `.animate-fade-in` on section wrappers — **contains a transform, so any `position: fixed` descendant gets trapped in its containing block; portal fixed overlays to `document.body`**), `modalIn` (scale + translateY, `.animate-modal-in`), `backdropIn` (`.animate-backdrop-in`), `spinSlow` (`.animate-spin-slow`), `qrScan` (`.animate-qr-scan`). All guarded with `@media (prefers-reduced-motion: reduce)` — keep that pattern for every new animation.
 
 ## Components
 
-- **Cards**: `bg-card border border-border rounded-2xl shadow-sm`, padding `p-6`/`p-8`.
-- **Buttons (primary)**: `bg-primary text-white rounded-lg` or `rounded-xl`, hover darkens toward `--secondary`.
-- **Sidebar**: floating panel, `rounded-2xl shadow-sm`, collapsible, persisted via localStorage.
-- **Icon badges**: `w-9 h-9 rounded-xl` tinted background + tinted icon, per metric card.
-- **Skeletons** (new): `bg-muted animate-pulse rounded-xl` block, replacing bare "Carregando..." text.
-- **Status dots** (new): small `absolute` circle, `bg-emerald-500` (online/read) or `bg-red-500` with count (unread), `ring-2 ring-card` so it reads over an avatar.
-
-## Motion
-
-- `transition-all duration-200` for hover states on clickable cards/rows (shadow + subtle `scale-[1.02]`).
-- `.animate-fade-in` keyframe utility (new, in `globals.css`) for content mount-in; guarded by `prefers-reduced-motion`.
-- Typing indicator: 3-dot pulse, staggered `animation-delay`.
-- Modal entrance: fade + scale (`.animate-modal-in`), no slide, no bounce.
+- **Primary CTA** — `.btn-gradient`: pill-shaped, brand gradient fill, `box-shadow` glow that intensifies on hover, `filter: brightness(1.05)` on hover, `scale(0.98)` on active, disabled state at `opacity: 0.6`. This is the system's signature action button.
+- **Modals with `position: fixed`** — always rendered via `createPortal(..., document.body)` (see `components/whatsapp-qr-modal.tsx`, `components/product-detail-modal.tsx`, and the inline member-edit modal in `app/(dashboard)/configuracoes/page.tsx`). Never rely on plain `position: fixed` inside page JSX.
+- **Sidebar** (`components/sidebar.tsx`), **skeleton loaders** (`components/skeleton.tsx`), **sparkline** (`components/sparkline.tsx`) already ship a first polish pass (gradient icon mark, loading skeletons).
+- Badges for status (e.g. "IA ativa", "Conectado") exist in `ia/page.tsx` and `produtos/page.tsx` with partial gradient treatment — candidate for standardization sitewide.
 
 ## Layout
 
-Dashboard content area is `p-2` wrapped page content; grids use `grid-cols-1 md:grid-cols-2 lg:grid-cols-4` for metric rows. Tables/lists prefer full-width rows over nested cards.
+- Dashboard shell: `app/(dashboard)/layout.tsx` + `components/sidebar.tsx`, section pages under `app/(dashboard)/{dashboard,produtos,contatos,atendimento,conhecimento,ia,configuracoes}/page.tsx`.
+- Cards are the dominant surface pattern (product cards, contact cards, conversation cards, settings cards) on a light `--background`.
+
+## Known rough edges (feeding the current polish pass)
+
+- Some primary buttons may still use the pre-`.btn-gradient` pattern (`bg-primary text-white rounded-lg`/`rounded-xl` + `hover:opacity-90`) instead of the pill gradient.
+- Quota/limit values (base de conhecimento entry limit, WhatsApp `min_delay_seconds`/`max_delay_seconds`/`daily_message_limit`) render as plain text, no visual progress affordance.
+- No reusable dark gradient "banner/highlight" card component yet.
+- Card hover states are mostly flat/neutral — no brand-colored glow or scale.
+- Status badges are inconsistent across sections (some gradient, some flat pill).

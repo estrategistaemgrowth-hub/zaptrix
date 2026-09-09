@@ -6,28 +6,31 @@ product
 
 ## Users
 
-Small/medium business owners and their sales teams who use WhatsApp as their main sales channel. They live in this dashboard all day: watching live conversations (Atendimento), managing a product catalog, training an AI sales agent (Conhecimento, IA), and connecting/monitoring their WhatsApp number (Evolution API). Context is fast-paced, often multitasking between chat and admin screens — clarity and low friction matter more than decoration.
+Lojistas de e-commerce (donos de loja online, pequeno/médio porte) que usam o Zaptrix para automatizar atendimento e vendas via WhatsApp com IA. Usam o dashboard no dia a dia para monitorar conversas, produtos, contatos e configurar o comportamento do agente de IA. Contexto: gestão operacional entre outras tarefas do negócio, não é o foco principal do dia — precisa ser rápido de ler e de confiança.
 
 ## Product Purpose
 
-Zaptrix is a SaaS that automates WhatsApp sales with an AI agent: it ingests a product catalog and knowledge base, talks to leads on WhatsApp, and hands off to a human when needed. Success looks like an operator trusting the dashboard enough to leave the AI running unattended, and being able to glance at any screen and immediately know what needs attention (unread messages, out-of-stock products, disconnected WhatsApp).
+SaaS de atendimento/vendas via WhatsApp com IA para lojistas de e-commerce. O dashboard existe para que o lojista configure o agente de IA, acompanhe conversas e contatos, gerencie o catálogo de produtos e monitore limites de uso/mensagens. Sucesso = o lojista confia que a IA está vendendo bem e consegue ajustar rápido quando algo precisa mudar.
 
 ## Brand Personality
 
-Confident, modern, technical-but-approachable. Three words: **precise, trustworthy, energetic**. The brand mark is a stylized lightning-bolt "Z" in a cyan-to-royal-blue gradient (`#22D3EE` → `#3B82F6` → `#1D4ED8`) — this gradient is the one deliberate moment of visual energy the product allows itself; everywhere else stays calm and solid so the gradient keeps its meaning as "this matters."
+Futurista, confiante, tecnológico — mas ainda um dashboard sério de operação (não um produto de consumo lúdico). O dono do produto pediu explicitamente mais presença do degradê azul da marca (`#22d3ee` → `#3b82f6` → `#1d4ed8`) e uma sensação mais "futurista" nos componentes, inspirada estruturalmente (não cromaticamente) em um design system de referência chamado "clickmax" — pílulas de CTA em degradê, cards de cota/progresso com barra em degradê, card de banner escuro-azulado de destaque, hover mais vivo em cards.
 
 ## Anti-references
 
-No purple, green, or off-brand hues introduced anywhere. No generic gray icon badges (the four-metric-card SaaS cliché is allowed only if the icon badges are tinted, not gray). No side-stripe borders as a rule — the one deliberate exception already agreed with the product owner is a left accent bar on out-of-stock / attention-needed rows, modeled after premium fintech/HR table patterns (e.g. "Rejected"/"Overdue" rows), used sparingly and only for that one alert meaning. No emoji as UI elements. No bouncy/elastic easing.
+- Paleta lima/verde-neon do "clickmax" (referência é só de ESTRUTURA de componente, nunca de cor).
+- Roxo como cor de marca — a marca é azul (ciano → azul → azul-royal).
+- Dashboard dark-mode como padrão geral de tela — o fundo é claro; cards escuros (banner de destaque) são exceção pontual, nunca a regra.
+- Preto puro em sombra/glow de hover — usar sempre a cor da marca (azul) em opacidade baixa.
 
 ## Design Principles
 
-1. **Identity preservation over reinvention** — existing tokens (`--primary #2563eb`, `--background #f0f4fa`, card/border system) are load-bearing brand decisions already made; extend them, never replace them.
-2. **The gradient is a spotlight, not wallpaper** — the brand's cyan-to-blue gradient appears once or twice per screen, on the single most important element (a header accent, an "AI active" badge, the primary CTA), never as a background wash.
-3. **Status is legible at a glance** — unread counts, online/offline dots, low-stock/attention rows must be readable without reading text, using color + shape (not gray-on-gray).
-4. **Motion explains state change, not decoration** — fades and hovers confirm something happened (loaded, hovered, opened); nothing animates just to animate, and everything respects `prefers-reduced-motion`.
-5. **Never a dead end** — every empty/loading state gives the user an icon, a two-layer message (what + why), and, when there's an action, a button to take it.
+1. Um único sistema de gradiente de marca reutilizado (não inventar paletas paralelas) — sempre os tokens já existentes em `app/globals.css` (`--primary`, `.gradient-brand`, `.btn-gradient`).
+2. Feedback visual de progresso/limite (cota de uso, limite de mensagens) sempre com barra visual em degradê, nunca só texto puro.
+3. Hover com vida (glow sutil na cor da marca + leve scale) em vez de hover neutro/plano, mas sem exagero — o produto é uma ferramenta de trabalho, não uma peça de campanha.
+4. Toda animação nova respeita `prefers-reduced-motion` (convenção já estabelecida no projeto).
+5. Qualquer modal/dropdown/tooltip novo com `position: fixed` usa `createPortal(..., document.body)` — bug já resolvido no projeto com wrappers `animate-fade-in` que usam `transform`.
 
 ## Accessibility & Inclusion
 
-No explicit WCAG target given; default to WCAG 2.1 AA as a baseline (4.5:1 body text contrast, visible focus states, `prefers-reduced-motion` alternatives for all new animation, no color-only status signaling — pair color dots/badges with an icon or text where feasible).
+Sem requisito formal de WCAG declarado pelo dono do produto. Manter contraste de texto em cards e badges, e garantir que toda animação decorativa tenha alternativa via `prefers-reduced-motion` (padrão já em uso no projeto).

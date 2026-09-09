@@ -394,7 +394,7 @@ export default function ContatosPage() {
                   {filteredContacts.map((contact) => {
                     const label = contact.name || contact.push_name || 'Sem nome';
                     return (
-                    <tr key={contact.id} className="transition-all duration-200 hover:bg-muted">
+                    <tr key={contact.id} className="transition-colors duration-200 hover:bg-primary/5">
                       <td className="px-6 py-4 text-sm font-medium text-foreground">
                         <div className="flex items-center gap-3">
                           <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold flex-shrink-0">

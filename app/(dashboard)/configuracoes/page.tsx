@@ -7,6 +7,8 @@ import { ensureWorkspace } from '@/lib/workspace';
 import { PROVIDER_LABELS, PROVIDER_MODELS, AiProvider } from '@/lib/ai-models';
 import { WhatsappQrModal } from '@/components/whatsapp-qr-modal';
 import { SkeletonRow } from '@/components/skeleton';
+import { StatusBadge } from '@/components/status-badge';
+import { QuotaBar } from '@/components/quota-bar';
 import {
   Plus,
   Trash2,
@@ -56,6 +58,8 @@ interface WhatsAppConnection {
   max_delay_seconds: number;
   daily_message_limit: number | null;
   warmup_mode: boolean;
+  /** Computed client-side in loadConnections — messages sent since midnight, only when a daily limit is set. */
+  messages_today?: number;
 }
 
 interface LlmCredential {
@@ -209,7 +213,27 @@ export default function ConfiguracoesPage() {
       .select('id, instance_name, status, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
       .eq('workspace_id', wsId)
       .order('created_at', { ascending: false });
-    setConnections(data || []);
+
+    const rows = data || [];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    // Only connections with a configured daily limit need the extra count —
+    // this feeds the quota bar with a real "sent today" number, never a guess.
+    const withUsage = await Promise.all(
+      rows.map(async (conn) => {
+        if (!conn.daily_message_limit) return conn;
+        const { count } = await supabase
+          .from('messages')
+          .select('id, conversations!inner(whatsapp_connection_id)', { count: 'exact', head: true })
+          .eq('workspace_id', wsId)
+          .eq('conversations.whatsapp_connection_id', conn.id)
+          .gte('created_at', today.toISOString());
+        return { ...conn, messages_today: count || 0 };
+      })
+    );
+
+    setConnections(withUsage);
   }
 
   async function loadCredentials(wsId: string) {
@@ -648,31 +672,46 @@ export default function ConfiguracoesPage() {
               connections.map((conn) => (
                 <div
                   key={conn.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
+                  className="flex items-center justify-between gap-4 p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
                 >
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p className="font-medium text-foreground flex items-center gap-2">
                       {conn.instance_name}
-                      <span
-                        className={`text-xs px-2 py-0.5 rounded-full ${
+                      <StatusBadge
+                        label={
                           conn.status === 'connected'
-                            ? 'bg-emerald-100 text-emerald-700'
+                            ? 'Conectado'
                             : conn.status === 'connecting'
-                            ? 'bg-amber-100 text-amber-700'
-                            : 'bg-gray-100 text-gray-700'
-                        }`}
-                      >
-                        {conn.status === 'connected' ? 'Conectado' : conn.status === 'connecting' ? 'Conectando' : 'Desconectado'}
-                      </span>
+                            ? 'Conectando'
+                            : conn.status === 'error'
+                            ? 'Erro'
+                            : 'Desconectado'
+                        }
+                        active={conn.status === 'connected'}
+                        tone={
+                          conn.status === 'connecting'
+                            ? 'warning'
+                            : conn.status === 'error'
+                            ? 'destructive'
+                            : 'neutral'
+                        }
+                      />
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       Delay {conn.min_delay_seconds}-{conn.max_delay_seconds}s
-                      {conn.daily_message_limit && ` · limite ${conn.daily_message_limit}/dia`}
                     </p>
+                    {conn.daily_message_limit ? (
+                      <QuotaBar
+                        label="Mensagens hoje"
+                        current={conn.messages_today ?? 0}
+                        max={conn.daily_message_limit}
+                        className="mt-2 max-w-xs"
+                      />
+                    ) : null}
                   </div>
                   <button
                     onClick={() => handleDeleteConnection(conn.id)}
-                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
+                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg flex-shrink-0"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
@@ -799,11 +838,7 @@ export default function ConfiguracoesPage() {
                   <div>
                     <p className="font-medium text-foreground flex items-center gap-2">
                       {PROVIDER_LABELS[cred.provider]}
-                      {cred.is_primary && (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-primary/10 text-primary">
-                          Principal
-                        </span>
-                      )}
+                      {cred.is_primary && <StatusBadge label="Principal" />}
                     </p>
                     <p className="text-xs text-muted-foreground mt-1 font-mono">
                       {cred.key_hint} · {cred.model_id}

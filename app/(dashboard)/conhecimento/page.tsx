@@ -237,7 +237,7 @@ export default function ConhecimentoPage() {
             entries.map((entry) => (
               <div
                 key={entry.id}
-                className={`bg-card border border-border rounded-2xl shadow-sm p-6 transition-all duration-200 hover:shadow-lg hover:scale-[1.02] ${
+                className={`card-hover-glow bg-card border border-border rounded-2xl shadow-sm p-6 ${
                   !entry.active ? 'opacity-60' : ''
                 }`}
               >

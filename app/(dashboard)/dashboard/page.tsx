@@ -5,12 +5,16 @@ import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { MessageCircle, Users, MessageSquare, TrendingUp, Zap } from 'lucide-react';
 import { Sparkline } from '@/components/sparkline';
+import { BannerCard } from '@/components/banner-card';
+import { QuotaBar } from '@/components/quota-bar';
 
 interface DashboardMetrics {
   activeConversations: number;
   totalContacts: number;
   messagesToday: number;
   totalMessages: number;
+  /** Sum of `daily_message_limit` across connected WhatsApp connections that have one configured. 0 = no limit set anywhere. */
+  dailyLimit: number;
 }
 
 const cards = [
@@ -73,6 +77,7 @@ export default function DashboardPage() {
     totalContacts: 0,
     messagesToday: 0,
     totalMessages: 0,
+    dailyLimit: 0,
   });
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
@@ -127,11 +132,22 @@ export default function DashboardPage() {
         .select('*', { count: 'exact', head: true })
         .eq('workspace_id', workspaceId);
 
+      const { data: connections } = await supabase
+        .from('whatsapp_connections')
+        .select('daily_message_limit')
+        .eq('workspace_id', workspaceId);
+
+      const dailyLimit = (connections || []).reduce(
+        (sum, conn) => sum + (conn.daily_message_limit || 0),
+        0
+      );
+
       setMetrics({
         activeConversations: activeCount || 0,
         totalContacts: contactCount || 0,
         messagesToday: todayCount || 0,
         totalMessages: totalCount || 0,
+        dailyLimit,
       });
     } catch (err) {
       console.error('Erro ao carregar métricas:', err);
@@ -154,13 +170,38 @@ export default function DashboardPage() {
         </div>
       </div>
 
+      <BannerCard
+        className="mb-6 animate-fade-in"
+        badge={new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })}
+        icon={MessageCircle}
+        title={
+          metrics.activeConversations > 0
+            ? `${metrics.activeConversations} ${metrics.activeConversations === 1 ? 'conversa aberta' : 'conversas abertas'} agora`
+            : 'Nenhuma conversa aberta no momento'
+        }
+        subtitle="Acompanhe o atendimento ao vivo e assuma qualquer conversa da sua IA a qualquer momento."
+        ctaLabel="Ver atendimento"
+        ctaHref="/atendimento"
+      />
+
+      {metrics.dailyLimit > 0 && (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-6 animate-fade-in">
+          <QuotaBar
+            label="Cota diária de mensagens"
+            current={metrics.messagesToday}
+            max={metrics.dailyLimit}
+            hint="Soma do limite diário configurado em todas as conexões WhatsApp"
+          />
+        </div>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5 mb-6 animate-fade-in">
         {cards.map((card) => {
           const Icon = card.icon;
           return (
             <div
               key={card.key}
-              className="bg-card border border-border rounded-2xl shadow-sm p-6 transition-shadow duration-200 hover:shadow-md"
+              className="card-hover-glow bg-card border border-border rounded-2xl shadow-sm p-6"
             >
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-sm font-medium text-muted-foreground">{card.label}</h3>

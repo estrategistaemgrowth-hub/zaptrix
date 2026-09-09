@@ -492,7 +492,7 @@ export function ProductDetailModal({ product, workspaceId, onClose, onSaved }: P
           <button
             onClick={handleSave}
             disabled={saving}
-            className="px-6 py-2 bg-primary text-white rounded-lg font-medium hover:opacity-90 disabled:opacity-50"
+            className="px-6 py-2 btn-gradient font-medium disabled:opacity-50"
           >
             {saving ? 'Salvando...' : 'Salvar alterações'}
           </button>

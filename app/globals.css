@@ -262,3 +262,64 @@ body {
     display: none !important;
   }
 }
+
+/* Card hover — brand-tinted glow + a hint of lift, for product/contact/
+   conversation surfaces. Swap in for a flat `hover:shadow-*` to make the
+   whole system read as one gradient identity instead of generic gray. */
+.card-hover-glow {
+  transition: box-shadow var(--duration-faster) ease-out, transform var(--duration-faster) ease-out,
+    border-color var(--duration-faster) ease-out;
+}
+
+.card-hover-glow:hover {
+  box-shadow: 0 14px 28px -12px rgba(37, 99, 235, 0.35);
+  border-color: rgba(37, 99, 235, 0.25);
+  transform: scale(1.015);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-hover-glow {
+    transition: box-shadow var(--duration-faster) ease-out, border-color var(--duration-faster) ease-out;
+  }
+  .card-hover-glow:hover {
+    transform: none;
+  }
+}
+
+/* Quota / usage bar — gradient fill on a rounded track, driven by an inline
+   `scaleX` transform (cheaper to animate than `width`). Used wherever the
+   system shows a "X de Y" limit (see components/quota-bar.tsx). */
+.quota-fill {
+  transition: transform var(--duration-slow) ease-out;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .quota-fill {
+    transition: none;
+  }
+}
+
+/* Banner / highlight card — the deliberate dark exception to the light
+   dashboard background (see components/banner-card.tsx). Deep-blue radial
+   sweep toward the brand cyan, never the neon lime of the clickmax reference. */
+.banner-card-surface {
+  background: radial-gradient(circle at 100% 0%, rgba(34, 211, 238, 0.35), transparent 55%),
+    linear-gradient(135deg, #0a1730 0%, #0f2a5c 50%, #14306f 100%);
+}
+
+.banner-cta {
+  transition: transform var(--duration-faster) ease-out, box-shadow var(--duration-faster) ease-out;
+}
+
+.banner-cta:hover {
+  transform: scale(1.03);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .banner-cta {
+    transition: none;
+  }
+  .banner-cta:hover {
+    transform: none;
+  }
+}

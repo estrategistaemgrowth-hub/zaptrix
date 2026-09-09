@@ -1,5 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { sendTextMessage } from '@/lib/evolution-api';
+import { decryptSecret } from '@/lib/security/encrypt';
+import { callLlm, ChatMessage } from '@/lib/llm-client';
+import { AiProvider } from '@/lib/ai-models';
+
+interface BusinessHoursDay {
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
+function isWithinBusinessHours(businessHours: Record<string, BusinessHoursDay> | null): boolean {
+  if (!businessHours) return true;
+
+  const now = new Date();
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Sao_Paulo',
+    weekday: 'long',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(now);
+
+  const weekdayName = parts.find((p) => p.type === 'weekday')?.value.toLowerCase() || '';
+  const hour = parts.find((p) => p.type === 'hour')?.value || '00';
+  const minute = parts.find((p) => p.type === 'minute')?.value || '00';
+  const currentTime = `${hour}:${minute}`;
+
+  const dayConfig = businessHours[weekdayName];
+  if (!dayConfig || !dayConfig.enabled) return false;
+
+  return currentTime >= dayConfig.start && currentTime <= dayConfig.end;
+}
+
+function buildSystemPrompt(profile: {
+  agent_name: string | null;
+  company_name: string | null;
+  objective: string | null;
+  persona: string | null;
+  tone: string | null;
+  custom_tone: string | null;
+  response_style: string | null;
+  allowed_topics: string | null;
+  forbidden_topics: string | null;
+  business_rules: string | null;
+}): string {
+  const lines: string[] = [];
+  lines.push(
+    `Você é ${profile.agent_name || 'um assistente de atendimento'} do WhatsApp${
+      profile.company_name ? ` da empresa ${profile.company_name}` : ''
+    }.`
+  );
+  if (profile.persona) lines.push(`Persona: ${profile.persona}`);
+  if (profile.objective) lines.push(`Objetivo: ${profile.objective}`);
+  const tone = profile.tone === 'personalizado' && profile.custom_tone ? profile.custom_tone : profile.tone;
+  if (tone) lines.push(`Tom de voz: ${tone}`);
+  if (profile.response_style) lines.push(`Estilo de resposta: ${profile.response_style}`);
+  if (profile.allowed_topics) lines.push(`Tópicos permitidos: ${profile.allowed_topics}`);
+  if (profile.forbidden_topics) lines.push(`Tópicos proibidos (nunca falar disso): ${profile.forbidden_topics}`);
+  if (profile.business_rules) lines.push(`Regras de negócio: ${profile.business_rules}`);
+  lines.push(
+    'Responda sempre em português do Brasil, de forma natural para WhatsApp (mensagens curtas, sem markdown). ' +
+      'Nunca invente informações, preços ou prazos que não tenha recebido de contexto.'
+  );
+  return lines.join('\n');
+}
 
 interface EvolutionWebhookPayload {
   event: string;
@@ -15,6 +81,148 @@ interface EvolutionWebhookPayload {
 
 function extractText(data: EvolutionWebhookPayload['data']): string | null {
   return data.message?.conversation || data.message?.extendedTextMessage?.text || null;
+}
+
+interface AutoReplyParams {
+  admin: ReturnType<typeof createAdminClient>;
+  workspaceId: string;
+  conversationId: string;
+  instanceName: string;
+  phone: string;
+  inputMessageId: string | null;
+}
+
+/**
+ * Gera e envia a resposta automática da IA para a mensagem recém-recebida.
+ * Best-effort: qualquer falha aqui é logada mas não derruba o webhook, já que
+ * a mensagem do cliente já foi salva com sucesso antes desta chamada.
+ */
+async function tryAutoReply({
+  admin,
+  workspaceId,
+  conversationId,
+  instanceName,
+  phone,
+  inputMessageId,
+}: AutoReplyParams) {
+  const startedAt = Date.now();
+
+  try {
+    const { data: conversation } = await admin
+      .from('conversations')
+      .select('ai_enabled')
+      .eq('id', conversationId)
+      .maybeSingle();
+
+    if (!conversation?.ai_enabled) return;
+
+    const { data: profile } = await admin
+      .from('ai_profiles')
+      .select('*')
+      .eq('workspace_id', workspaceId)
+      .maybeSingle();
+
+    if (!profile || !profile.enabled) return;
+
+    if (profile.business_hours_enabled && !isWithinBusinessHours(profile.business_hours)) {
+      if (profile.out_of_hours_message) {
+        await sendTextMessage(instanceName, phone, profile.out_of_hours_message);
+        await admin.from('messages').insert([
+          {
+            workspace_id: workspaceId,
+            conversation_id: conversationId,
+            direction: 'outbound',
+            sender_type: 'system',
+            content: profile.out_of_hours_message,
+          },
+        ]);
+      }
+      return;
+    }
+
+    const { data: credential } = await admin
+      .from('llm_credentials')
+      .select('provider, encrypted_api_key, model_id')
+      .eq('workspace_id', workspaceId)
+      .eq('is_primary', true)
+      .eq('enabled', true)
+      .maybeSingle();
+
+    if (!credential) return;
+
+    const { data: recentMessages } = await admin
+      .from('messages')
+      .select('sender_type, content')
+      .eq('conversation_id', conversationId)
+      .order('created_at', { ascending: false })
+      .limit(12);
+
+    const history: ChatMessage[] = (recentMessages || [])
+      .reverse()
+      .filter((m) => m.content)
+      .map((m) => ({
+        role: m.sender_type === 'customer' ? 'user' : 'assistant',
+        content: m.content as string,
+      }));
+
+    const systemPrompt = buildSystemPrompt(profile);
+    const apiKey = decryptSecret(credential.encrypted_api_key);
+
+    const replyText = await callLlm(
+      credential.provider as AiProvider,
+      apiKey,
+      credential.model_id || '',
+      systemPrompt,
+      history
+    );
+
+    await sendTextMessage(instanceName, phone, replyText);
+
+    await admin.from('messages').insert([
+      {
+        workspace_id: workspaceId,
+        conversation_id: conversationId,
+        direction: 'outbound',
+        sender_type: 'ai',
+        content: replyText,
+      },
+    ]);
+
+    await admin
+      .from('conversations')
+      .update({
+        last_message_at: new Date().toISOString(),
+        last_ai_message_at: new Date().toISOString(),
+      })
+      .eq('id', conversationId);
+
+    await admin.from('ai_runs').insert([
+      {
+        workspace_id: workspaceId,
+        conversation_id: conversationId,
+        input_message_id: inputMessageId,
+        provider: credential.provider,
+        model: credential.model_id,
+        status: 'completed',
+        latency_ms: Date.now() - startedAt,
+      },
+    ]);
+  } catch (error) {
+    console.error('Erro na resposta automática da IA:', error);
+    await admin
+      .from('ai_runs')
+      .insert([
+        {
+          workspace_id: workspaceId,
+          conversation_id: conversationId,
+          input_message_id: inputMessageId,
+          status: 'failed',
+          latency_ms: Date.now() - startedAt,
+          error_message: error instanceof Error ? error.message.slice(0, 500) : 'Erro desconhecido',
+        },
+      ])
+      .then(() => {});
+  }
 }
 
 export async function POST(request: NextRequest) {
@@ -120,16 +328,20 @@ export async function POST(request: NextRequest) {
       conversationId = newConversation.id;
     }
 
-    const { error: messageError } = await admin.from('messages').insert([
-      {
-        workspace_id: workspaceId,
-        conversation_id: conversationId,
-        external_message_id: payload.data.key?.id || null,
-        direction: 'inbound',
-        sender_type: 'customer',
-        content: text,
-      },
-    ]);
+    const { data: insertedMessage, error: messageError } = await admin
+      .from('messages')
+      .insert([
+        {
+          workspace_id: workspaceId,
+          conversation_id: conversationId,
+          external_message_id: payload.data.key?.id || null,
+          direction: 'inbound',
+          sender_type: 'customer',
+          content: text,
+        },
+      ])
+      .select('id')
+      .single();
 
     if (messageError) {
       console.error('Erro ao inserir mensagem:', messageError);
@@ -143,6 +355,15 @@ export async function POST(request: NextRequest) {
         unread_count: nextUnreadCount,
       })
       .eq('id', conversationId);
+
+    await tryAutoReply({
+      admin,
+      workspaceId,
+      conversationId,
+      instanceName,
+      phone,
+      inputMessageId: insertedMessage?.id || null,
+    });
 
     return NextResponse.json({ status: 'success' });
   } catch (error) {

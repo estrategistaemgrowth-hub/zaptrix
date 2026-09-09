@@ -8,6 +8,7 @@ import { QuotaBar } from '@/components/quota-bar';
 import { SkeletonRow } from '@/components/skeleton';
 import { EditPlanModal } from './edit-plan-modal';
 import { InvoicesModal } from './invoices-modal';
+import { SignupLinksCard } from './signup-links-card';
 
 interface Plan {
   id: string;
@@ -179,6 +180,8 @@ export default function MasterAdminPage() {
             Novo lojista
           </button>
         </div>
+
+        <SignupLinksCard />
 
         {showNewForm && (
           <div className="bg-card border border-border rounded-2xl p-6 mb-8 animate-fade-in">

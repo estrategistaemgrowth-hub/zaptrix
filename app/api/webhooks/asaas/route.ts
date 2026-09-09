@@ -56,11 +56,19 @@ export async function POST(request: NextRequest) {
 
     await admin.from('invoices').update({ status: newStatus }).eq('id', invoice.id);
 
-    // Pagamento confirmado reativa a assinatura, caso estivesse vencida.
+    // Pagamento confirmado reativa a assinatura e empurra o vencimento pra
+    // frente (30 dias a partir de hoje) — é isso que o middleware usa pra
+    // decidir se bloqueia o acesso, não o status da fatura isoladamente.
     if (newStatus === 'paid') {
+      const nextExpiry = new Date();
+      nextExpiry.setDate(nextExpiry.getDate() + 30);
+
       await admin
         .from('workspaces')
-        .update({ subscription_status: 'active' })
+        .update({
+          subscription_status: 'active',
+          subscription_expires_at: nextExpiry.toISOString(),
+        })
         .eq('id', invoice.workspace_id);
     }
 

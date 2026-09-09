@@ -1,8 +1,8 @@
 import { createServerClient, parseCookieHeader } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/signup'];
-const NO_WORKSPACE_CHECK_PATHS = ['/onboarding', '/workspace-suspended'];
+const PUBLIC_PATHS = ['/login', '/signup', '/assinar'];
+const NO_WORKSPACE_CHECK_PATHS = ['/onboarding', '/workspace-suspended', '/assinatura-vencida'];
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -85,12 +85,20 @@ export async function middleware(request: NextRequest) {
 
   const { data: workspace } = await supabase
     .from('workspaces')
-    .select('status')
+    .select('status, subscription_expires_at')
     .eq('id', membership.workspace_id)
     .maybeSingle();
 
   if (workspace?.status !== 'active') {
     return NextResponse.redirect(new URL('/workspace-suspended', request.url));
+  }
+
+  // Assinatura vencida (teste grátis acabou, ou pagamento não confirmado/
+  // lapsou) bloqueia o acesso até o pagamento cair — workspaces sem data de
+  // vencimento definida (ex: criados manualmente sem plano) nunca bloqueiam
+  // por esta regra.
+  if (workspace.subscription_expires_at && new Date(workspace.subscription_expires_at) < new Date()) {
+    return NextResponse.redirect(new URL('/assinatura-vencida', request.url));
   }
 
   return response;

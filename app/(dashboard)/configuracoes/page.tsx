@@ -9,6 +9,7 @@ import { WhatsappQrModal } from '@/components/whatsapp-qr-modal';
 import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
 import { QuotaBar } from '@/components/quota-bar';
+import { PlanPicker } from '@/components/plan-picker';
 import {
   Plus,
   Trash2,
@@ -95,6 +96,7 @@ interface WorkspaceBilling {
   plan_id: string | null;
   subscription_status: 'trial' | 'active' | 'overdue' | 'canceled';
   subscription_expires_at: string | null;
+  is_complimentary: boolean;
   plan: PlanInfo | null;
 }
 
@@ -196,6 +198,12 @@ export default function ConfiguracoesPage() {
   const [productCount, setProductCount] = useState(0);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+  const [showPlanPicker, setShowPlanPicker] = useState(false);
+  const [planPickerResult, setPlanPickerResult] = useState<{
+    pixQrCode: string | null;
+    paymentUrl: string | null;
+    warning?: string | null;
+  } | null>(null);
 
   const [aiProfileId, setAiProfileId] = useState<string | null>(null);
   const [handoffEnabled, setHandoffEnabled] = useState(false);
@@ -272,7 +280,7 @@ export default function ConfiguracoesPage() {
         supabase
           .from('workspaces')
           .select(
-            'plan_id, subscription_status, subscription_expires_at, plans(id, name, price_cents, product_limit, member_limit)'
+            'plan_id, subscription_status, subscription_expires_at, is_complimentary, plans(id, name, price_cents, product_limit, member_limit)'
           )
           .eq('id', wsId)
           .maybeSingle(),
@@ -293,6 +301,7 @@ export default function ConfiguracoesPage() {
         plan_id: wsData.plan_id,
         subscription_status: wsData.subscription_status,
         subscription_expires_at: wsData.subscription_expires_at,
+        is_complimentary: wsData.is_complimentary,
         plan,
       });
     }
@@ -303,6 +312,12 @@ export default function ConfiguracoesPage() {
       console.error('Erro ao carregar faturas:', invoicesError);
     }
     setInvoices(invoicesData || []);
+  }
+
+  function handlePlanSubscribed(result: { pixQrCode: string | null; paymentUrl: string | null; warning?: string | null }) {
+    setPlanPickerResult(result);
+    setShowPlanPicker(false);
+    if (workspaceId) loadBilling(workspaceId);
   }
 
   async function loadHandoffSettings(wsId: string) {
@@ -885,9 +900,61 @@ export default function ConfiguracoesPage() {
             <h2 className="text-xl font-semibold text-foreground">Minha Assinatura</h2>
           </div>
 
-          {!workspaceBilling?.plan ? (
-            <div className="mb-6 p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900">
-              Nenhum plano definido — fale com o suporte.
+          {planPickerResult ? (
+            <div className="mb-6 p-4 border border-border rounded-xl bg-muted space-y-3">
+              {planPickerResult.warning && (
+                <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  {planPickerResult.warning}
+                </p>
+              )}
+              {planPickerResult.pixQrCode && (
+                <div className="flex justify-center">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={`data:image/png;base64,${planPickerResult.pixQrCode}`}
+                    alt="QR Code PIX"
+                    className="w-40 h-40"
+                  />
+                </div>
+              )}
+              {planPickerResult.paymentUrl && (
+                <a
+                  href={planPickerResult.paymentUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block w-full text-center btn-gradient font-medium py-2.5"
+                >
+                  Pagar com PIX
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => setPlanPickerResult(null)}
+                className="w-full text-sm text-muted-foreground hover:text-foreground"
+              >
+                Fechar
+              </button>
+            </div>
+          ) : !workspaceBilling?.plan && workspaceBilling?.is_complimentary ? (
+            <div className="mb-6 p-4 bg-primary/5 border border-primary/20 rounded-xl text-sm text-foreground">
+              Acesso privilegiado (cortesia) — sem cobrança.
+            </div>
+          ) : !workspaceBilling?.plan ? (
+            <div className="mb-6">
+              {showPlanPicker ? (
+                <PlanPicker onSubscribed={handlePlanSubscribed} />
+              ) : (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl text-sm text-amber-900 flex items-center justify-between gap-4 flex-wrap">
+                  Nenhum plano definido ainda.
+                  <button
+                    type="button"
+                    onClick={() => setShowPlanPicker(true)}
+                    className="btn-gradient px-4 py-1.5 text-sm font-medium"
+                  >
+                    Assinar um plano
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="mb-6 p-4 bg-muted rounded-xl flex items-center justify-between gap-4 flex-wrap">
@@ -895,13 +962,30 @@ export default function ConfiguracoesPage() {
                 <p className="text-sm text-muted-foreground">Plano atual</p>
                 <p className="text-lg font-semibold text-foreground">{workspaceBilling.plan.name}</p>
               </div>
-              <div className="text-right">
-                <p className="text-sm text-muted-foreground">Valor</p>
-                <p className="text-lg font-semibold text-foreground">
-                  {formatCents(workspaceBilling.plan.price_cents)}
-                  <span className="text-sm font-normal text-muted-foreground">/mês</span>
-                </p>
+              <div className="text-right flex items-center gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Valor</p>
+                  <p className="text-lg font-semibold text-foreground">
+                    {formatCents(workspaceBilling.plan.price_cents)}
+                    <span className="text-sm font-normal text-muted-foreground">/mês</span>
+                  </p>
+                </div>
+                {!workspaceBilling.is_complimentary && (
+                  <button
+                    type="button"
+                    onClick={() => setShowPlanPicker((v) => !v)}
+                    className="px-3 py-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg hover:bg-primary/5"
+                  >
+                    {showPlanPicker ? 'Cancelar' : 'Trocar de plano'}
+                  </button>
+                )}
               </div>
+            </div>
+          )}
+
+          {showPlanPicker && workspaceBilling?.plan && (
+            <div className="mb-6">
+              <PlanPicker onSubscribed={handlePlanSubscribed} />
             </div>
           )}
 

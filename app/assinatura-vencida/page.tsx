@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
 import { Lock, RefreshCw } from 'lucide-react';
+import { PlanPicker } from '@/components/plan-picker';
 
 interface PendingInvoice {
   amount_cents: number;
@@ -19,6 +20,11 @@ export default function SubscriptionExpiredPage() {
   const [invoice, setInvoice] = useState<PendingInvoice | null>(null);
   const [loading, setLoading] = useState(true);
   const [checking, setChecking] = useState(false);
+  const [subscribeResult, setSubscribeResult] = useState<{
+    pixQrCode: string | null;
+    paymentUrl: string | null;
+    warning?: string | null;
+  } | null>(null);
 
   async function load() {
     const {
@@ -71,9 +77,15 @@ export default function SubscriptionExpiredPage() {
     router.push('/login');
   }
 
+  const showPlanPicker = !loading && !invoice && !subscribeResult;
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-8">
-      <div className="max-w-md w-full bg-card border border-destructive/30 rounded-2xl shadow-sm p-10 text-center">
+      <div
+        className={`${
+          showPlanPicker ? 'max-w-2xl' : 'max-w-md'
+        } w-full bg-card border border-destructive/30 rounded-2xl shadow-sm p-10 text-center`}
+      >
         <div className="flex justify-center mb-6">
           <div className="w-16 h-16 bg-destructive/10 rounded-full flex items-center justify-center">
             <Lock className="w-8 h-8 text-destructive" />
@@ -116,10 +128,42 @@ export default function SubscriptionExpiredPage() {
               </a>
             )}
           </div>
+        ) : subscribeResult ? (
+          <div className="space-y-4 text-left">
+            {subscribeResult.warning && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                {subscribeResult.warning}
+              </p>
+            )}
+
+            {subscribeResult.pixQrCode && (
+              <div className="flex justify-center">
+                <img
+                  src={`data:image/png;base64,${subscribeResult.pixQrCode}`}
+                  alt="QR Code PIX"
+                  className="w-48 h-48"
+                />
+              </div>
+            )}
+
+            {subscribeResult.paymentUrl && (
+              <a
+                href={subscribeResult.paymentUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="block w-full text-center btn-gradient font-medium py-2.5"
+              >
+                Pagar com PIX
+              </a>
+            )}
+          </div>
         ) : (
-          <p className="text-sm text-muted-foreground mb-4">
-            Nenhuma fatura pendente encontrada. Entre em contato com o suporte.
-          </p>
+          <div className="space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Seu teste grátis acabou. Escolha um plano para continuar usando o Zaptrix:
+            </p>
+            <PlanPicker onSubscribed={(result) => setSubscribeResult(result)} />
+          </div>
         )}
 
         <button

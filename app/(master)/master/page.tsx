@@ -10,6 +10,7 @@ import {
   MessageCircle,
   Package,
   Plus,
+  Search,
   Smartphone,
   Unlock,
 } from 'lucide-react';
@@ -110,7 +111,18 @@ export default function MasterAdminPage() {
   } | null>(null);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [invoicesWorkspace, setInvoicesWorkspace] = useState<Workspace | null>(null);
+  const [search, setSearch] = useState('');
   const supabase = createClient();
+
+  const filteredWorkspaces = workspaces.filter((ws) => {
+    if (!search.trim()) return true;
+    const term = search.trim().toLowerCase();
+    return (
+      ws.name.toLowerCase().includes(term) ||
+      (ws.ownerEmail || '').toLowerCase().includes(term) ||
+      (ws.segment || '').toLowerCase().includes(term)
+    );
+  });
 
   useEffect(() => {
     loadWorkspaces();
@@ -502,6 +514,17 @@ export default function MasterAdminPage() {
           </div>
         )}
 
+        <div className="relative mb-4 max-w-sm">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Buscar por loja, email ou segmento..."
+            className="w-full pl-9 pr-4 py-2 border border-border rounded-xl bg-white text-foreground text-sm"
+          />
+        </div>
+
         <div className="bg-card border border-border rounded-lg overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full">
@@ -527,14 +550,16 @@ export default function MasterAdminPage() {
                       </div>
                     </td>
                   </tr>
-                ) : workspaces.length === 0 ? (
+                ) : filteredWorkspaces.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
-                      Nenhum lojista cadastrado ainda
+                      {workspaces.length === 0
+                        ? 'Nenhum lojista cadastrado ainda'
+                        : 'Nenhum lojista encontrado para essa busca'}
                     </td>
                   </tr>
                 ) : (
-                  workspaces.map((ws) => (
+                  filteredWorkspaces.map((ws) => (
                     <tr key={ws.id} className="border-b border-border hover:bg-muted/50 align-top">
                       <td className="px-6 py-4">
                         <p className="text-sm font-medium text-foreground">{ws.name}</p>

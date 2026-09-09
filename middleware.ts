@@ -49,22 +49,20 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/login', request.url));
   }
 
+  const { data: platformAdmin } = await supabase
+    .from('platform_admins')
+    .select('id')
+    .eq('user_id', session.user.id)
+    .maybeSingle();
+
+  const isPlatformAdmin = !!platformAdmin;
+
   // Rotas do painel master exigem platform_admin — não passam pela checagem de
   // workspace/plano abaixo (super admin não pertence a nenhum workspace de lojista).
   if (pathname.startsWith('/master')) {
-    const { data: platformAdmin } = await supabase
-      .from('platform_admins')
-      .select('id')
-      .eq('user_id', session.user.id)
-      .maybeSingle();
-
-    if (!platformAdmin) {
+    if (!isPlatformAdmin) {
       return NextResponse.redirect(new URL('/dashboard', request.url));
     }
-    return response;
-  }
-
-  if (NO_WORKSPACE_CHECK_PATHS.some((p) => pathname.startsWith(p))) {
     return response;
   }
 
@@ -78,6 +76,17 @@ export async function middleware(request: NextRequest) {
     .eq('user_id', session.user.id)
     .limit(1)
     .maybeSingle();
+
+  // Super admin sem workspace nenhum (o caso comum — ele não é lojista) nunca
+  // deve cair no fluxo de onboarding/dashboard de lojista: vai direto pro
+  // painel master, em qualquer rota que não seja /master (já tratada acima).
+  if (!membership && isPlatformAdmin) {
+    return NextResponse.redirect(new URL('/master', request.url));
+  }
+
+  if (NO_WORKSPACE_CHECK_PATHS.some((p) => pathname.startsWith(p))) {
+    return response;
+  }
 
   if (!membership) {
     return NextResponse.redirect(new URL('/onboarding', request.url));

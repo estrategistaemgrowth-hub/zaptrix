@@ -1,0 +1,103 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    /* Zaptrix Design System (Nubank-style) */
+
+    /* Primary colors */
+    --primary: #820ad1;
+    --primary-foreground: #ffffff;
+    --secondary: #3e1874;
+    --secondary-foreground: #000000;
+    --tertiary: #d2a5ff;
+
+    /* Surfaces */
+    --background: #ffffff;
+    --foreground: #000000;
+    --card: #ffffff;
+    --card-foreground: #000000;
+    --popover: #ffffff;
+    --popover-foreground: #000000;
+    --muted: #ffffff;
+    --muted-foreground: #777777;
+
+    /* States */
+    --accent: #820ad1;
+    --accent-foreground: #ffffff;
+    --destructive: #d01d1c;
+    --destructive-foreground: #ffffff;
+    --border: #e4e4e4;
+    --input: #ffffff;
+    --ring: #820ad1;
+
+    /* Semantic */
+    --success: #0c7a3a;
+    --warning: #9b5a00;
+    --info: #820ad1;
+
+    /* Charts */
+    --chart-1: #820ad1;
+    --chart-2: #820ad1;
+    --chart-3: #d2a5ff;
+    --chart-4: #9b5a00;
+    --chart-5: #9b5a00;
+
+    /* Typography */
+    --font-sans: Arial, sans-serif;
+    --font-mono: Arial, sans-serif;
+
+    /* Motion */
+    --duration-faster: 150ms;
+    --duration-gentle: 350ms;
+    --duration-slow: 650ms;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --background: #000000;
+      --foreground: #ffffff;
+      --card: #080808;
+      --card-foreground: #ffffff;
+      --popover: #080808;
+      --popover-foreground: #ffffff;
+      --muted: #121212;
+      --muted-foreground: #bfbfbf;
+      --border: #ffffff1a;
+      --input: #080808;
+      --ring: #820ad1;
+    }
+  }
+
+  [data-theme="light"] {
+    --background: #ffffff;
+    --foreground: #000000;
+    --card: #ffffff;
+    --card-foreground: #000000;
+    --muted: #ffffff;
+    --muted-foreground: #777777;
+    --border: #e4e4e4;
+    --input: #ffffff;
+  }
+
+  [data-theme="dark"] {
+    --background: #000000;
+    --foreground: #ffffff;
+    --card: #080808;
+    --card-foreground: #ffffff;
+    --muted: #121212;
+    --muted-foreground: #bfbfbf;
+    --border: #ffffff1a;
+    --input: #080808;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}

@@ -14,6 +14,7 @@ async function getMembership() {
     .from('workspace_members')
     .select('workspace_id, role')
     .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle();
 
   return membership;

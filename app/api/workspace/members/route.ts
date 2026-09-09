@@ -20,6 +20,7 @@ export async function GET() {
     .from('workspace_members')
     .select('workspace_id')
     .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle();
 
   if (!membership) {
@@ -67,6 +68,7 @@ export async function PATCH(request: NextRequest) {
     .from('workspace_members')
     .select('workspace_id, role')
     .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle();
 
   if (!membership || !['owner', 'admin'].includes(membership.role)) {
@@ -118,6 +120,7 @@ export async function POST(request: NextRequest) {
     .from('workspace_members')
     .select('workspace_id, role')
     .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle();
 
   if (!membership || !['owner', 'admin'].includes(membership.role)) {
@@ -171,6 +174,7 @@ export async function DELETE(request: NextRequest) {
     .from('workspace_members')
     .select('workspace_id, role')
     .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle();
 
   if (!membership || !['owner', 'admin'].includes(membership.role)) {

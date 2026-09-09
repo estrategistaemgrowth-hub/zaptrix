@@ -68,10 +68,15 @@ export async function middleware(request: NextRequest) {
     return response;
   }
 
+  // .limit(1) antes de .maybeSingle(): se o usuário tiver mais de uma linha em
+  // workspace_members (não deveria, mas já aconteceu em teste — .maybeSingle()
+  // sozinho erra com "multiple rows" e o erro descartado vira `null`,
+  // mandando um usuário com workspace de verdade pro /onboarding por engano).
   const { data: membership } = await supabase
     .from('workspace_members')
     .select('workspace_id')
     .eq('user_id', session.user.id)
+    .limit(1)
     .maybeSingle();
 
   if (!membership) {

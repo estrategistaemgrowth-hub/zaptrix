@@ -106,6 +106,7 @@ interface Invoice {
   file_url: string | null;
   notes: string | null;
   created_at: string;
+  asaas_invoice_url: string | null;
 }
 
 function formatCents(cents: number): string {
@@ -278,7 +279,7 @@ export default function ConfiguracoesPage() {
         supabase.from('products').select('id', { count: 'exact', head: true }).eq('workspace_id', wsId),
         supabase
           .from('invoices')
-          .select('id, amount_cents, due_date, status, file_url, notes, created_at')
+          .select('id, amount_cents, due_date, status, file_url, notes, created_at, asaas_invoice_url')
           .eq('workspace_id', wsId)
           .order('due_date', { ascending: false }),
       ]);
@@ -983,6 +984,16 @@ export default function ConfiguracoesPage() {
                     </div>
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <StatusBadge label={badge.label} active={badge.active} tone={badge.tone} />
+                      {invoice.status === 'pending' && invoice.asaas_invoice_url && (
+                        <a
+                          href={invoice.asaas_invoice_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="btn-gradient px-3 py-1.5 text-sm font-medium"
+                        >
+                          Pagar com PIX
+                        </a>
+                      )}
                       {invoice.file_url && (
                         <button
                           onClick={() => handleDownloadInvoice(invoice.id)}

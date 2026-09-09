@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Download, FileText, Loader2, Upload, X } from 'lucide-react';
+import { Download, ExternalLink, FileText, Loader2, QrCode, Upload, X } from 'lucide-react';
 
 interface Invoice {
   id: string;
@@ -13,6 +13,9 @@ interface Invoice {
   downloadUrl: string | null;
   notes: string | null;
   created_at: string;
+  asaas_payment_id: string | null;
+  asaas_invoice_url: string | null;
+  asaas_pix_qrcode: string | null;
 }
 
 interface Props {
@@ -51,6 +54,9 @@ export function InvoicesModal({ workspaceId, workspaceName, onClose }: Props) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
   const [form, setForm] = useState({ amount: '', dueDate: '', notes: '' });
+  const [generateAsaasCharge, setGenerateAsaasCharge] = useState(false);
+  const [cpfCnpj, setCpfCnpj] = useState('');
+  const [asaasWarning, setAsaasWarning] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -82,6 +88,7 @@ export function InvoicesModal({ workspaceId, workspaceName, onClose }: Props) {
 
     setUploading(true);
     setError('');
+    setAsaasWarning('');
 
     try {
       const file = fileInputRef.current?.files?.[0];
@@ -106,6 +113,8 @@ export function InvoicesModal({ workspaceId, workspaceName, onClose }: Props) {
           base64,
           fileName,
           mimeType,
+          generateAsaasCharge,
+          cpfCnpj: cpfCnpj || undefined,
         }),
       });
 
@@ -116,7 +125,10 @@ export function InvoicesModal({ workspaceId, workspaceName, onClose }: Props) {
         return;
       }
 
+      if (result.asaasWarning) setAsaasWarning(result.asaasWarning);
+
       setForm({ amount: '', dueDate: '', notes: '' });
+      setCpfCnpj('');
       if (fileInputRef.current) fileInputRef.current.value = '';
       loadInvoices();
     } catch (err) {
@@ -195,10 +207,41 @@ export function InvoicesModal({ workspaceId, workspaceName, onClose }: Props) {
 
             <div>
               <label className="block text-xs text-muted-foreground mb-1">
-                Arquivo (PDF gerado no Asaas)
+                Arquivo (opcional — PDF/imagem anexado manualmente)
               </label>
               <input ref={fileInputRef} type="file" accept="application/pdf,image/*" className="text-sm" />
             </div>
+
+            <label className="flex items-center gap-2 text-sm text-foreground">
+              <input
+                type="checkbox"
+                checked={generateAsaasCharge}
+                onChange={(e) => setGenerateAsaasCharge(e.target.checked)}
+                className="w-4 h-4"
+              />
+              Gerar cobrança automática no Asaas (PIX com confirmação automática)
+            </label>
+
+            {generateAsaasCharge && (
+              <div>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  CPF/CNPJ do lojista (só na primeira cobrança)
+                </label>
+                <input
+                  type="text"
+                  value={cpfCnpj}
+                  onChange={(e) => setCpfCnpj(e.target.value)}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="000.000.000-00"
+                />
+              </div>
+            )}
+
+            {asaasWarning && (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                {asaasWarning}
+              </div>
+            )}
 
             <button
               type="button"
@@ -252,6 +295,28 @@ export function InvoicesModal({ workspaceId, workspaceName, onClose }: Props) {
                         ))}
                       </select>
 
+                      {invoice.asaas_invoice_url && (
+                        <a
+                          href={invoice.asaas_invoice_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 text-primary hover:bg-primary/10 rounded-lg"
+                          title="Abrir cobrança no Asaas"
+                        >
+                          <ExternalLink className="w-4 h-4" />
+                        </a>
+                      )}
+                      {invoice.asaas_pix_qrcode && (
+                        <a
+                          href={`data:image/png;base64,${invoice.asaas_pix_qrcode}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="p-2 text-primary hover:bg-primary/10 rounded-lg"
+                          title="Ver QR code PIX"
+                        >
+                          <QrCode className="w-4 h-4" />
+                        </a>
+                      )}
                       {invoice.downloadUrl && (
                         <a
                           href={invoice.downloadUrl}

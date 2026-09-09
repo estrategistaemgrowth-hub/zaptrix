@@ -30,6 +30,7 @@ export async function GET(request: NextRequest) {
     .from('workspace_members')
     .select('workspace_id')
     .eq('user_id', user.id)
+    .limit(1)
     .maybeSingle();
 
   if (!membership) {

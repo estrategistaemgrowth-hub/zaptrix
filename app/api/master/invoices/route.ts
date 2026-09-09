@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { isAsaasConfigured, createAsaasCustomer, createAsaasPayment, getAsaasPixQrCode } from '@/lib/asaas';
 
 // Documento financeiro — limite conservador, mesmo espírito do
 // app/api/whatsapp/send-media/route.ts (rejeita cedo, antes do upload).
@@ -74,8 +75,18 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const { workspaceId, amountCents, dueDate, status, notes, base64, fileName, mimeType } =
-    await request.json();
+  const {
+    workspaceId,
+    amountCents,
+    dueDate,
+    status,
+    notes,
+    base64,
+    fileName,
+    mimeType,
+    generateAsaasCharge,
+    cpfCnpj,
+  } = await request.json();
 
   if (!workspaceId || !amountCents || !dueDate) {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
@@ -140,7 +151,83 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 400 });
   }
 
-  return NextResponse.json({ invoice });
+  if (!generateAsaasCharge) {
+    return NextResponse.json({ invoice });
+  }
+
+  if (!isAsaasConfigured()) {
+    return NextResponse.json({
+      invoice,
+      asaasWarning: 'ASAAS_API_KEY não configurada no ambiente. Fatura salva sem cobrança automática.',
+    });
+  }
+
+  try {
+    const { data: workspace } = await admin
+      .from('workspaces')
+      .select('name, owner_user_id, asaas_customer_id, cpf_cnpj')
+      .eq('id', workspaceId)
+      .maybeSingle();
+
+    if (!workspace) {
+      return NextResponse.json({ invoice, asaasWarning: 'Workspace não encontrado para gerar cobrança.' });
+    }
+
+    let asaasCustomerId = workspace.asaas_customer_id as string | null;
+
+    if (!asaasCustomerId) {
+      const finalCpfCnpj = cpfCnpj || workspace.cpf_cnpj;
+      if (!finalCpfCnpj) {
+        return NextResponse.json({
+          invoice,
+          asaasWarning: 'Informe o CPF/CNPJ do lojista para gerar a primeira cobrança no Asaas.',
+        });
+      }
+
+      const { data: ownerUser } = await admin.auth.admin.getUserById(workspace.owner_user_id);
+      const customer = await createAsaasCustomer(
+        workspace.name,
+        finalCpfCnpj,
+        ownerUser.user?.email || ''
+      );
+      asaasCustomerId = customer.id;
+
+      await admin
+        .from('workspaces')
+        .update({ asaas_customer_id: asaasCustomerId, cpf_cnpj: finalCpfCnpj })
+        .eq('id', workspaceId);
+    }
+
+    const payment = await createAsaasPayment({
+      customerId: asaasCustomerId,
+      value: amountCents / 100,
+      dueDate,
+      description: notes || `Assinatura Zaptrix — ${workspace.name}`,
+      externalReference: invoice.id,
+    });
+
+    const pixQrCode = await getAsaasPixQrCode(payment.id).catch(() => null);
+
+    const { data: updatedInvoice } = await admin
+      .from('invoices')
+      .update({
+        asaas_payment_id: payment.id,
+        asaas_invoice_url: payment.invoiceUrl,
+        asaas_pix_payload: pixQrCode?.payload || null,
+        asaas_pix_qrcode: pixQrCode?.encodedImage || null,
+      })
+      .eq('id', invoice.id)
+      .select()
+      .single();
+
+    return NextResponse.json({ invoice: updatedInvoice || invoice });
+  } catch (err) {
+    console.error('Erro ao gerar cobrança no Asaas:', err);
+    return NextResponse.json({
+      invoice,
+      asaasWarning: err instanceof Error ? err.message : 'Erro ao gerar cobrança no Asaas.',
+    });
+  }
 }
 
 export async function PATCH(request: NextRequest) {

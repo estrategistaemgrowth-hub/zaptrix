@@ -779,13 +779,35 @@ export default function AtendimentoPage() {
             <>
               {/* Header */}
               <div className="p-6 border-b border-border bg-muted flex justify-between items-center">
-                <div>
-                  <h2 className="text-xl font-bold text-foreground">
-                    {contactLabel(selectedConversation.contact)}
-                  </h2>
-                  <p className="text-sm text-muted-foreground">
-                    {selectedConversation.contact?.phone}
-                  </p>
+                <div className="flex items-center gap-2">
+                  <div>
+                    <h2 className="text-xl font-bold text-foreground">
+                      {contactLabel(selectedConversation.contact)}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedConversation.contact?.phone}
+                    </p>
+                  </div>
+
+                  {selectedConversation.contact?.ai_memory && (
+                    <div className="relative group flex-shrink-0">
+                      <button
+                        type="button"
+                        className="w-7 h-7 flex items-center justify-center rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors duration-150"
+                        title="Ver memória da IA sobre este cliente"
+                      >
+                        <Brain className="w-4 h-4" />
+                      </button>
+                      <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 absolute left-0 top-full mt-2 w-80 max-w-[80vw] bg-card border border-border rounded-xl shadow-lg p-4 z-20">
+                        <p className="text-xs font-medium text-primary mb-1.5">
+                          Memória da IA sobre este cliente
+                        </p>
+                        <p className="text-xs text-foreground/80 whitespace-pre-line leading-relaxed">
+                          {selectedConversation.contact.ai_memory}
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex items-center gap-3">
                   <button
@@ -817,15 +839,6 @@ export default function AtendimentoPage() {
                 </div>
               </div>
 
-              {selectedConversation.contact?.ai_memory && (
-                <div className="px-6 py-3 bg-primary/5 border-b border-border flex items-start gap-2.5">
-                  <Brain className="w-4 h-4 text-primary flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-foreground/80 whitespace-pre-line leading-relaxed">
-                    <span className="font-medium text-primary">Memória da IA sobre este cliente: </span>
-                    {selectedConversation.contact.ai_memory}
-                  </p>
-                </div>
-              )}
 
               {/* Mensagens */}
               <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-card">

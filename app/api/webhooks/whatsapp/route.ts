@@ -154,7 +154,7 @@ function formatPrice(value: number | null): string {
 async function buildKnowledgeContext(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string
-): Promise<{ contextText: string; productImages: Map<string, { imageUrl: string; purchaseUrl: string | null }> }> {
+): Promise<{ contextText: string; productImages: Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }> }> {
   const [{ data: entries }, { data: products }] = await Promise.all([
     admin
       .from('knowledge_entries')
@@ -166,7 +166,7 @@ async function buildKnowledgeContext(
     admin
       .from('products')
       .select(
-        'name, category, price, promotional_price, stock_quantity, description, image_url, purchase_url'
+        'id, name, category, price, promotional_price, stock_quantity, description, image_url, purchase_url'
       )
       .eq('workspace_id', workspaceId)
       .eq('active', true)
@@ -175,7 +175,7 @@ async function buildKnowledgeContext(
   ]);
 
   const blocks: string[] = [];
-  const productImages = new Map<string, { imageUrl: string; purchaseUrl: string | null }>();
+  const productImages = new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>();
 
   if (entries && entries.length > 0) {
     const lines = entries.map(
@@ -199,6 +199,7 @@ async function buildKnowledgeContext(
 
       if (p.image_url) {
         productImages.set(p.name.trim().toLowerCase(), {
+          productId: p.id,
           imageUrl: p.image_url,
           purchaseUrl: p.purchase_url,
         });
@@ -519,7 +520,7 @@ async function tryAutoReply({
 
     const { contextText: knowledgeContext, productImages } = profile.use_knowledge_base
       ? await buildKnowledgeContext(admin, workspaceId)
-      : { contextText: '', productImages: new Map<string, { imageUrl: string; purchaseUrl: string | null }>() };
+      : { contextText: '', productImages: new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>() };
     const memoryContext = contact?.ai_memory
       ? `\n\nMemória sobre este cliente (o que já sabemos dele de conversas anteriores):\n${contact.ai_memory}`
       : '';
@@ -553,6 +554,16 @@ async function tryAutoReply({
             message_type: 'image',
             media_url: match.imageUrl,
             media_caption: name,
+          },
+        ]);
+
+        // Registra o interesse no produto (base do card "Produtos mais procurados" do Dashboard).
+        await admin.from('product_clicks').insert([
+          {
+            workspace_id: workspaceId,
+            product_id: match.productId,
+            conversation_id: conversationId,
+            contact_id: contactId,
           },
         ]);
       } catch (err) {

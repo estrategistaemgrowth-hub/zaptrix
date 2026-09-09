@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { MessageCircle, Users, MessageSquare, TrendingUp, Zap } from 'lucide-react';
+import { MessageCircle, Users, MessageSquare, TrendingUp, Zap, Check, Package, Clock } from 'lucide-react';
 import { Sparkline } from '@/components/sparkline';
 import { BannerCard } from '@/components/banner-card';
 import { QuotaBar } from '@/components/quota-bar';
@@ -15,6 +15,19 @@ interface DashboardMetrics {
   totalMessages: number;
   /** Sum of `daily_message_limit` across connected WhatsApp connections that have one configured. 0 = no limit set anywhere. */
   dailyLimit: number;
+}
+
+interface OnboardingStatus {
+  whatsapp: boolean;
+  produtos: boolean;
+  conhecimento: boolean;
+  atender: boolean;
+}
+
+interface BusinessMetrics {
+  funnel: { open: number; follow_up: number; won: number; lost: number };
+  avgAiResponseMs: number | null;
+  topProducts: { name: string; clicks: number }[];
 }
 
 const cards = [
@@ -64,11 +77,11 @@ const cards = [
   },
 ];
 
-const steps = [
-  { n: 1, title: 'WhatsApp', desc: 'Conectar Evolution API' },
-  { n: 2, title: 'Produtos', desc: 'Cadastrar seu catálogo' },
-  { n: 3, title: 'Conhecimento', desc: 'Treinar a IA com docs' },
-  { n: 4, title: 'Atender', desc: 'Receber mensagens ao vivo' },
+const steps: { n: number; key: keyof OnboardingStatus; title: string; desc: string }[] = [
+  { n: 1, key: 'whatsapp', title: 'WhatsApp', desc: 'Conectar Evolution API' },
+  { n: 2, key: 'produtos', title: 'Produtos', desc: 'Cadastrar seu catálogo' },
+  { n: 3, key: 'conhecimento', title: 'Conhecimento', desc: 'Treinar a IA com docs' },
+  { n: 4, key: 'atender', title: 'Atender', desc: 'Receber mensagens ao vivo' },
 ];
 
 export default function DashboardPage() {
@@ -78,6 +91,17 @@ export default function DashboardPage() {
     messagesToday: 0,
     totalMessages: 0,
     dailyLimit: 0,
+  });
+  const [onboarding, setOnboarding] = useState<OnboardingStatus>({
+    whatsapp: false,
+    produtos: false,
+    conhecimento: false,
+    atender: false,
+  });
+  const [businessMetrics, setBusinessMetrics] = useState<BusinessMetrics>({
+    funnel: { open: 0, follow_up: 0, won: 0, lost: 0 },
+    avgAiResponseMs: null,
+    topProducts: [],
   });
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
@@ -134,7 +158,7 @@ export default function DashboardPage() {
 
       const { data: connections } = await supabase
         .from('whatsapp_connections')
-        .select('daily_message_limit')
+        .select('daily_message_limit, status')
         .eq('workspace_id', workspaceId);
 
       const dailyLimit = (connections || []).reduce(
@@ -149,6 +173,81 @@ export default function DashboardPage() {
         totalMessages: totalCount || 0,
         dailyLimit,
       });
+
+      const [
+        { count: productsCount },
+        { count: knowledgeCount },
+        { count: customerMessagesCount },
+      ] = await Promise.all([
+        supabase
+          .from('products')
+          .select('*', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceId),
+        supabase
+          .from('knowledge_entries')
+          .select('*', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceId),
+        supabase
+          .from('messages')
+          .select('*', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceId)
+          .eq('sender_type', 'customer'),
+      ]);
+
+      setOnboarding({
+        whatsapp: (connections || []).some((c) => c.status === 'connected'),
+        produtos: (productsCount || 0) > 0,
+        conhecimento: (knowledgeCount || 0) > 0,
+        atender: (customerMessagesCount || 0) > 0,
+      });
+
+      const { data: conversationStatuses } = await supabase
+        .from('conversations')
+        .select('status')
+        .eq('workspace_id', workspaceId);
+
+      const funnel: BusinessMetrics['funnel'] = { open: 0, follow_up: 0, won: 0, lost: 0 };
+      (conversationStatuses || []).forEach((c) => {
+        const status = c.status as keyof BusinessMetrics['funnel'];
+        if (status === 'open' || status === 'follow_up' || status === 'won' || status === 'lost') {
+          funnel[status] += 1;
+        }
+      });
+
+      const { data: aiRuns } = await supabase
+        .from('ai_runs')
+        .select('latency_ms')
+        .eq('workspace_id', workspaceId)
+        .eq('status', 'completed')
+        .not('latency_ms', 'is', null)
+        .order('created_at', { ascending: false })
+        .limit(50);
+
+      const avgAiResponseMs =
+        aiRuns && aiRuns.length > 0
+          ? aiRuns.reduce((sum, r) => sum + (r.latency_ms || 0), 0) / aiRuns.length
+          : null;
+
+      const { data: clicks } = await supabase
+        .from('product_clicks')
+        .select('product_id, products(name)')
+        .eq('workspace_id', workspaceId)
+        .order('created_at', { ascending: false })
+        .limit(200);
+
+      const clickCounts = new Map<string, { name: string; clicks: number }>();
+      (clicks || []).forEach((c: any) => {
+        const name = Array.isArray(c.products) ? c.products[0]?.name : c.products?.name;
+        if (!name) return;
+        const existing = clickCounts.get(c.product_id);
+        clickCounts.set(c.product_id, { name, clicks: (existing?.clicks || 0) + 1 });
+      });
+
+      const topProducts = Array.from(clickCounts.values())
+        .sort((a, b) => b.clicks - a.clicks)
+        .slice(0, 5);
+
+      setBusinessMetrics({ funnel, avgAiResponseMs, topProducts });
     } catch (err) {
       console.error('Erro ao carregar métricas:', err);
     } finally {
@@ -223,29 +322,105 @@ export default function DashboardPage() {
         })}
       </div>
 
-      <div className="bg-card border border-border rounded-2xl shadow-sm p-8 animate-fade-in">
-        <h2 className="text-lg font-semibold text-foreground mb-2">Comece sua jornada</h2>
-        <p className="text-muted-foreground mb-6">
-          Siga os passos abaixo para configurar seu agente de vendas
-        </p>
+      {!loading && Object.values(onboarding).every(Boolean) ? (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-8 animate-fade-in">
+          <h2 className="text-lg font-semibold text-foreground mb-2">Métricas do negócio</h2>
+          <p className="text-muted-foreground mb-6">
+            Sua jornada de configuração está completa — acompanhe o desempenho real do seu agente
+          </p>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {steps.map((step) => (
-            <div
-              key={step.n}
-              className="p-4 bg-muted rounded-xl transition-all duration-200 hover:shadow-sm"
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <div className="gradient-brand w-8 h-8 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-sm">
-                  {step.n}
-                </div>
-                <h3 className="font-semibold text-foreground">{step.title}</h3>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+            <div className="p-5 bg-muted rounded-xl">
+              <h3 className="text-sm font-semibold text-foreground mb-4">Funil de conversas</h3>
+              <div className="space-y-2.5">
+                {[
+                  { label: 'Abertas', value: businessMetrics.funnel.open, dot: 'bg-emerald-500' },
+                  { label: 'Follow-up', value: businessMetrics.funnel.follow_up, dot: 'bg-blue-500' },
+                  { label: 'Fechadas (ganho)', value: businessMetrics.funnel.won, dot: 'bg-green-600' },
+                  { label: 'Perdidas', value: businessMetrics.funnel.lost, dot: 'bg-destructive' },
+                ].map((row) => (
+                  <div key={row.label} className="flex items-center justify-between text-sm">
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      <span className={`w-2 h-2 rounded-full ${row.dot}`} />
+                      {row.label}
+                    </span>
+                    <span className="font-semibold text-foreground">{row.value}</span>
+                  </div>
+                ))}
               </div>
-              <p className="text-sm text-muted-foreground">{step.desc}</p>
             </div>
-          ))}
+
+            <div className="p-5 bg-muted rounded-xl">
+              <div className="flex items-center gap-2 mb-4">
+                <Clock className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-semibold text-foreground">Tempo médio de resposta da IA</h3>
+              </div>
+              {businessMetrics.avgAiResponseMs !== null ? (
+                <p className="text-3xl font-bold text-primary">
+                  {(businessMetrics.avgAiResponseMs / 1000).toFixed(1)}s
+                </p>
+              ) : (
+                <p className="text-sm text-muted-foreground">Ainda sem respostas da IA registradas.</p>
+              )}
+              <p className="text-xs text-muted-foreground mt-2">Últimas 50 respostas concluídas</p>
+            </div>
+
+            <div className="p-5 bg-muted rounded-xl">
+              <div className="flex items-center gap-2 mb-4">
+                <Package className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-semibold text-foreground">Produtos mais procurados</h3>
+              </div>
+              {businessMetrics.topProducts.length > 0 ? (
+                <div className="space-y-2">
+                  {businessMetrics.topProducts.map((p) => (
+                    <div key={p.name} className="flex items-center justify-between text-sm">
+                      <span className="text-foreground line-clamp-1">{p.name}</span>
+                      <span className="text-muted-foreground flex-shrink-0 ml-2">{p.clicks}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Ainda sem dados suficientes — aparece aqui quando a IA envia fotos de produtos aos clientes.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-8 animate-fade-in">
+          <h2 className="text-lg font-semibold text-foreground mb-2">Comece sua jornada</h2>
+          <p className="text-muted-foreground mb-6">
+            Siga os passos abaixo para configurar seu agente de vendas
+          </p>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            {steps.map((step) => {
+              const done = onboarding[step.key];
+              return (
+                <div
+                  key={step.n}
+                  className={`p-4 rounded-xl transition-all duration-200 hover:shadow-sm ${
+                    done ? 'bg-primary/5 border border-primary/20' : 'bg-muted'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 mb-2">
+                    <div
+                      className={`w-8 h-8 text-white rounded-full flex items-center justify-center font-bold text-sm shadow-sm flex-shrink-0 ${
+                        done ? 'bg-emerald-500' : 'gradient-brand'
+                      }`}
+                    >
+                      {done ? <Check className="w-4 h-4" /> : step.n}
+                    </div>
+                    <h3 className="font-semibold text-foreground">{step.title}</h3>
+                  </div>
+                  <p className="text-sm text-muted-foreground">{done ? 'Concluído' : step.desc}</p>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

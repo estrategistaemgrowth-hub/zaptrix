@@ -96,7 +96,7 @@ export default function LoginPage() {
           </form>
 
           <p className="text-center text-sm text-muted-foreground mt-6">
-            Não tem conta? <a href="/signup" className="text-primary hover:underline">Criar conta</a>
+            Não tem conta? <a href="/assinar" className="text-primary hover:underline">Criar conta</a>
           </p>
         </div>
       </div>

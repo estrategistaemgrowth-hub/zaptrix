@@ -3,10 +3,11 @@ import { createAdminClient } from '@/lib/supabase/admin';
 
 /**
  * Webhook do Asaas — configurar no painel do Asaas apontando para
- * `{APP_URL}/api/webhooks/asaas?token=ASAAS_WEBHOOK_TOKEN`. A validação é por
- * token na própria URL (mesmo padrão já usado no webhook do WhatsApp em
- * app/api/webhooks/whatsapp/route.ts) em vez de depender de um cabeçalho
- * específico do Asaas, pra manter controle total sobre a validação.
+ * `{APP_URL}/api/webhooks/asaas?token=ASAAS_WEBHOOK_TOKEN`. Validação em duas
+ * camadas: token na própria URL (mesmo padrão do webhook do WhatsApp em
+ * app/api/webhooks/whatsapp/route.ts, garante funcionamento mesmo se o nome
+ * do cabeçalho mudar) + o "asaas-access-token" que a própria Asaas envia
+ * (ASAAS_WEBHOOK_AUTH_TOKEN), gerado automaticamente ao criar o webhook.
  */
 
 interface AsaasWebhookPayload {
@@ -22,6 +23,17 @@ export async function POST(request: NextRequest) {
   const token = request.nextUrl.searchParams.get('token');
   if (token !== process.env.ASAAS_WEBHOOK_TOKEN) {
     return NextResponse.json({ error: 'Invalid token' }, { status: 401 });
+  }
+
+  // Segunda camada: se ASAAS_WEBHOOK_AUTH_TOKEN estiver configurada, exige
+  // também o cabeçalho que a Asaas envia — mas nunca bloqueia só por causa
+  // dela se a variável não estiver definida (o token da URL já basta).
+  const expectedAuthToken = process.env.ASAAS_WEBHOOK_AUTH_TOKEN;
+  if (expectedAuthToken) {
+    const receivedAuthToken = request.headers.get('asaas-access-token');
+    if (receivedAuthToken !== expectedAuthToken) {
+      return NextResponse.json({ error: 'Invalid auth token' }, { status: 401 });
+    }
   }
 
   try {

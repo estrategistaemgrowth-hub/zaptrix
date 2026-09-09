@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAsaasConfigured, createAsaasCustomer, createAsaasPayment, getAsaasPixQrCode } from '@/lib/asaas';
+import { translateAuthError } from '@/lib/auth-errors';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 /**
@@ -48,7 +49,7 @@ export async function POST(request: NextRequest) {
 
   if (createError || !newUser.user) {
     return NextResponse.json(
-      { error: createError?.message || 'Erro ao criar usuário' },
+      { error: createError ? translateAuthError(createError.message) : 'Erro ao criar usuário' },
       { status: 400 }
     );
   }

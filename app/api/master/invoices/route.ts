@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAsaasConfigured, createAsaasCustomer, createAsaasPayment, getAsaasPixQrCode } from '@/lib/asaas';
+import { logAdminAction } from '@/lib/audit-log';
 
 // Documento financeiro — limite conservador, mesmo espírito do
 // app/api/whatsapp/send-media/route.ts (rejeita cedo, antes do upload).
@@ -152,6 +153,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: insertError.message }, { status: 400 });
   }
 
+  await logAdminAction({
+    admin,
+    adminUserId: user.id,
+    action: 'invoice_created',
+    targetWorkspaceId: workspaceId,
+    details: { amountCents, dueDate, generateAsaasCharge: !!generateAsaasCharge },
+  });
+
   if (!generateAsaasCharge) {
     return NextResponse.json({ invoice });
   }
@@ -249,12 +258,21 @@ export async function PATCH(request: NextRequest) {
   }
 
   const admin = createAdminClient();
+  const { data: invoiceRow } = await admin.from('invoices').select('workspace_id').eq('id', invoiceId).maybeSingle();
   const { error } = await admin.from('invoices').update({ status }).eq('id', invoiceId);
 
   if (error) {
     console.error('Erro ao atualizar fatura (master):', error);
     return NextResponse.json({ error: 'Erro ao atualizar fatura' }, { status: 400 });
   }
+
+  await logAdminAction({
+    admin,
+    adminUserId: user.id,
+    action: 'invoice_updated',
+    targetWorkspaceId: invoiceRow?.workspace_id || null,
+    details: { invoiceId, status },
+  });
 
   return NextResponse.json({ status: 'ok' });
 }

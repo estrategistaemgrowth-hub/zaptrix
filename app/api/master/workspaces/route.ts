@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { generateInvoiceWithAsaasCharge } from '@/lib/generate-invoice';
+import { translateAuthError } from '@/lib/auth-errors';
+import { logAdminAction } from '@/lib/audit-log';
 
 /**
  * Confere que quem chama é super admin da plataforma. A API nunca confia só
@@ -166,7 +168,7 @@ export async function POST(request: NextRequest) {
 
   if (createError || !newUser.user) {
     return NextResponse.json(
-      { error: createError?.message || 'Erro ao criar usuário' },
+      { error: createError ? translateAuthError(createError.message) : 'Erro ao criar usuário' },
       { status: 400 }
     );
   }
@@ -213,6 +215,14 @@ export async function POST(request: NextRequest) {
     await admin.auth.admin.deleteUser(newUser.user.id);
     return NextResponse.json({ error: memberError.message }, { status: 400 });
   }
+
+  await logAdminAction({
+    admin,
+    adminUserId: user.id,
+    action: 'workspace_created',
+    targetWorkspaceId: workspace.id,
+    details: { storeName, email, planId, isComplimentary: !!isComplimentary },
+  });
 
   // Acesso privilegiado (cortesia) nunca gera cobrança — não faz sentido
   // cobrar e ao mesmo tempo marcar como isento de cobrança.
@@ -282,6 +292,14 @@ export async function PATCH(request: NextRequest) {
     console.error('Erro ao atualizar workspace (master):', error);
     return NextResponse.json({ error: 'Erro ao atualizar loja' }, { status: 400 });
   }
+
+  await logAdminAction({
+    admin,
+    adminUserId: user.id,
+    action: 'workspace_updated',
+    targetWorkspaceId: workspaceId,
+    details: updates,
+  });
 
   return NextResponse.json({ status: 'ok' });
 }

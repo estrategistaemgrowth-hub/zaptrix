@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { translateAuthError } from '@/lib/auth-errors';
 
 function generateTempPassword() {
   return Math.random().toString(36).slice(-6) + Math.random().toString(36).slice(-6).toUpperCase() + '!1';
@@ -138,7 +139,7 @@ export async function POST(request: NextRequest) {
 
   if (createError || !newUser.user) {
     return NextResponse.json(
-      { error: createError?.message || 'Erro ao criar usuário' },
+      { error: createError ? translateAuthError(createError.message) : 'Erro ao criar usuário' },
       { status: 400 }
     );
   }

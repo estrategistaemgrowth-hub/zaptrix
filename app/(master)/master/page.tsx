@@ -18,8 +18,10 @@ import { StatusBadge } from '@/components/status-badge';
 import { QuotaBar } from '@/components/quota-bar';
 import { SkeletonRow } from '@/components/skeleton';
 import { EditPlanModal } from './edit-plan-modal';
+import { EditPlansModal } from './edit-plans-modal';
 import { InvoicesModal } from './invoices-modal';
 import { SignupLinksCard } from './signup-links-card';
+import { AuditLogModal } from './audit-log-modal';
 
 interface Plan {
   id: string;
@@ -111,6 +113,8 @@ export default function MasterAdminPage() {
   } | null>(null);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [invoicesWorkspace, setInvoicesWorkspace] = useState<Workspace | null>(null);
+  const [showPlansModal, setShowPlansModal] = useState(false);
+  const [showAuditLog, setShowAuditLog] = useState(false);
   const [search, setSearch] = useState('');
   const supabase = createClient();
 
@@ -230,13 +234,27 @@ export default function MasterAdminPage() {
             <h1 className="text-3xl font-bold text-foreground">Painel Master</h1>
             <p className="text-muted-foreground">Gerenciar lojistas, planos e faturas da plataforma</p>
           </div>
-          <button
-            onClick={() => setShowNewForm(!showNewForm)}
-            className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Novo lojista
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setShowAuditLog(true)}
+              className="px-4 py-2 border border-border text-foreground rounded-xl font-medium text-sm hover:bg-muted"
+            >
+              Log de auditoria
+            </button>
+            <button
+              onClick={() => setShowPlansModal(true)}
+              className="px-4 py-2 border border-border text-foreground rounded-xl font-medium text-sm hover:bg-muted"
+            >
+              Editar planos
+            </button>
+            <button
+              onClick={() => setShowNewForm(!showNewForm)}
+              className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Novo lojista
+            </button>
+          </div>
         </div>
 
         {summary && (
@@ -586,6 +604,9 @@ export default function MasterAdminPage() {
                           {ws.is_complimentary && (
                             <StatusBadge label="Cortesia" active tone="warning" />
                           )}
+                          {ws.subscription_status === 'canceled' && (
+                            <StatusBadge label="Assinatura cancelada" active={false} tone="destructive" />
+                          )}
                         </div>
                         {ws.status === 'blocked' && ws.status_reason && (
                           <p className="text-xs text-muted-foreground mt-1">{ws.status_reason}</p>
@@ -685,6 +706,20 @@ export default function MasterAdminPage() {
           onClose={() => setInvoicesWorkspace(null)}
         />
       )}
+
+      {showPlansModal && (
+        <EditPlansModal
+          plans={plans}
+          onClose={() => setShowPlansModal(false)}
+          onSaved={() => {
+            setShowPlansModal(false);
+            loadPlans();
+            loadWorkspaces();
+          }}
+        />
+      )}
+
+      {showAuditLog && <AuditLogModal onClose={() => setShowAuditLog(false)} />}
     </div>
   );
 }

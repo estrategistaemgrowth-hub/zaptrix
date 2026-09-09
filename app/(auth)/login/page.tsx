@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
+import { translateAuthError } from '@/lib/auth-errors';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -25,7 +26,7 @@ export default function LoginPage() {
       });
 
       if (signInError) {
-        setError(signInError.message);
+        setError(translateAuthError(signInError.message));
         return;
       }
 

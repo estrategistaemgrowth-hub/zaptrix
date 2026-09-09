@@ -204,6 +204,7 @@ export default function ConfiguracoesPage() {
     paymentUrl: string | null;
     warning?: string | null;
   } | null>(null);
+  const [cancelingSubscription, setCancelingSubscription] = useState(false);
 
   const [aiProfileId, setAiProfileId] = useState<string | null>(null);
   const [handoffEnabled, setHandoffEnabled] = useState(false);
@@ -318,6 +319,32 @@ export default function ConfiguracoesPage() {
     setPlanPickerResult(result);
     setShowPlanPicker(false);
     if (workspaceId) loadBilling(workspaceId);
+  }
+
+  async function handleCancelSubscription(action: 'cancel' | 'reactivate') {
+    if (action === 'cancel' && !window.confirm('Cancelar a assinatura? Você mantém acesso até o vencimento atual.')) {
+      return;
+    }
+
+    setCancelingSubscription(true);
+    try {
+      const res = await fetch('/api/subscription/cancel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action }),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        alert(result.error || 'Erro ao atualizar assinatura');
+        return;
+      }
+      if (workspaceId) await loadBilling(workspaceId);
+    } catch (err) {
+      console.error('Erro ao cancelar/reativar assinatura:', err);
+      alert('Erro inesperado');
+    } finally {
+      setCancelingSubscription(false);
+    }
   }
 
   async function loadHandoffSettings(wsId: string) {
@@ -1037,6 +1064,37 @@ export default function ConfiguracoesPage() {
               })()}
             </div>
           </div>
+
+          {workspaceBilling && !workspaceBilling.is_complimentary && (
+            <div className="mb-6">
+              {workspaceBilling.subscription_status === 'canceled' ? (
+                <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between gap-4 flex-wrap">
+                  <p className="text-sm text-amber-900">
+                    Assinatura cancelada — você mantém acesso até o vencimento acima.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => handleCancelSubscription('reactivate')}
+                    disabled={cancelingSubscription}
+                    className="px-4 py-1.5 text-sm font-medium btn-gradient disabled:opacity-50"
+                  >
+                    Reativar assinatura
+                  </button>
+                </div>
+              ) : (
+                workspaceBilling.plan && (
+                  <button
+                    type="button"
+                    onClick={() => handleCancelSubscription('cancel')}
+                    disabled={cancelingSubscription}
+                    className="text-sm text-muted-foreground hover:text-destructive disabled:opacity-50"
+                  >
+                    Cancelar assinatura
+                  </button>
+                )
+              )}
+            </div>
+          )}
 
           <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
             <Receipt className="w-4 h-4 text-primary" /> Faturas

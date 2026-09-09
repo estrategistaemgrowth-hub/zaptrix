@@ -32,12 +32,25 @@ export async function ensureWorkspace(
     return { workspaceId: existing.workspace_id, role: existing.role };
   }
 
-  // Usuário sem workspace: criar um automaticamente (dono)
+  // Usuário sem workspace: criar um automaticamente (dono), já com teste
+  // grátis de 7 dias — sem subscription_expires_at definido, o middleware
+  // nunca bloqueia por vencimento (bug real que isso corrige: alguém que
+  // chegasse aqui sem passar por /assinar ganhava acesso grátis pra sempre).
   const workspaceName = userEmail ? `Workspace de ${userEmail.split('@')[0]}` : 'Meu Workspace';
+  const trialExpiresAt = new Date();
+  trialExpiresAt.setDate(trialExpiresAt.getDate() + 7);
 
   const { data: newWorkspace, error: createError } = await supabase
     .from('workspaces')
-    .insert([{ name: workspaceName, owner_user_id: userId, created_by: userId }])
+    .insert([
+      {
+        name: workspaceName,
+        owner_user_id: userId,
+        created_by: userId,
+        subscription_status: 'trial',
+        subscription_expires_at: trialExpiresAt.toISOString(),
+      },
+    ])
     .select('id')
     .single();
 

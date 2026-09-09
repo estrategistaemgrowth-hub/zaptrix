@@ -1,4 +1,10 @@
+'use client';
+
+import { useRouter } from 'next/navigation';
+
 export default function OnboardingPage() {
+  const router = useRouter();
+
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-8">
       <div className="max-w-2xl w-full">
@@ -68,7 +74,10 @@ export default function OnboardingPage() {
             </div>
           </div>
 
-          <button className="mt-12 px-8 py-3 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90">
+          <button
+            onClick={() => router.push('/dashboard')}
+            className="mt-12 px-8 py-3 bg-primary text-primary-foreground rounded-md font-medium hover:opacity-90 cursor-pointer"
+          >
             Começar agora
           </button>
         </div>

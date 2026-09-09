@@ -1,7 +1,9 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { useState } from 'react';
+import { createClient } from '@/lib/supabase/client';
 import {
   MessageCircle,
   Users,
@@ -23,6 +25,29 @@ const links = [
   { href: '/whatsapp', label: 'WhatsApp', icon: MessageCircle },
   { href: '/configuracoes', label: 'Configurações', icon: Settings },
 ];
+
+function LogoutButton() {
+  const [loading, setLoading] = useState(false);
+  const router = useRouter();
+  const supabase = createClient();
+
+  async function handleLogout() {
+    setLoading(true);
+    await supabase.auth.signOut();
+    router.push('/login');
+  }
+
+  return (
+    <button
+      onClick={handleLogout}
+      disabled={loading}
+      className="w-full flex items-center gap-3 px-4 py-2 text-foreground hover:bg-muted rounded-md transition-colors text-sm disabled:opacity-50"
+    >
+      <LogOut className="w-4 h-4" />
+      <span>{loading ? 'Saindo...' : 'Sair'}</span>
+    </button>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
@@ -53,10 +78,7 @@ export function Sidebar() {
         })}
       </nav>
 
-      <button className="w-full flex items-center gap-3 px-4 py-2 text-foreground hover:bg-muted rounded-md transition-colors text-sm">
-        <LogOut className="w-4 h-4" />
-        <span>Sair</span>
-      </button>
+      <LogoutButton />
     </aside>
   );
 }

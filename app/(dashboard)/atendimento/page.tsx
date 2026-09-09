@@ -14,6 +14,8 @@ import {
   List,
   KanbanSquare,
   ArrowRight,
+  Paperclip,
+  FileText,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
@@ -58,12 +60,36 @@ function timeAgo(dateStr: string | null): string | null {
   return `há ${diffDays}d`;
 }
 
+type MessageType = 'text' | 'image' | 'audio' | 'video' | 'document' | 'sticker';
+
 interface Message {
   id: string;
   conversation_id: string;
   sender_type: 'customer' | 'ai' | 'human' | 'system';
+  message_type?: MessageType | null;
   content: string | null;
+  media_url?: string | null;
+  media_mime_type?: string | null;
+  media_caption?: string | null;
+  transcript?: string | null;
   created_at: string;
+}
+
+const MAX_ATTACHMENT_SIZE_BYTES = 16 * 1024 * 1024; // 16MB — limite comum do WhatsApp
+
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      // reader.result vem como data URI ("data:image/png;base64,AAAA...") —
+      // a Evolution API espera só o base64 puro, sem o prefixo.
+      const base64 = result.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
 }
 
 export default function AtendimentoPage() {
@@ -79,7 +105,9 @@ export default function AtendimentoPage() {
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<Conversation['status'] | null>(null);
+  const [uploadingMedia, setUploadingMedia] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -226,6 +254,50 @@ export default function AtendimentoPage() {
     if (selectedConversation.ai_enabled) {
       setShowTyping(true);
       window.setTimeout(() => setShowTyping(false), 1700);
+    }
+  }
+
+  async function handleAttachmentSelected(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (!file || !selectedConversation || !workspaceId) return;
+
+    if (file.size > MAX_ATTACHMENT_SIZE_BYTES) {
+      alert('Arquivo muito grande. O limite é 16MB.');
+      return;
+    }
+
+    setUploadingMedia(true);
+
+    try {
+      const base64 = await fileToBase64(file);
+      const res = await fetch('/api/whatsapp/send-media', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          conversationId: selectedConversation.id,
+          base64,
+          mimeType: file.type || 'application/octet-stream',
+          fileName: file.name,
+        }),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        alert('Erro ao enviar arquivo: ' + (result.error || ''));
+        return;
+      }
+
+      if (result.warning) {
+        alert(result.warning);
+      }
+
+      await loadMessages(selectedConversation.id);
+    } catch (err) {
+      console.error('Erro inesperado ao enviar arquivo:', err);
+      alert('Erro inesperado ao enviar arquivo');
+    } finally {
+      setUploadingMedia(false);
     }
   }
 
@@ -664,7 +736,48 @@ export default function AtendimentoPage() {
                             {msg.sender_type === 'ai' ? 'IA' : 'Sistema'}
                           </p>
                         )}
-                        <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+
+                        {msg.message_type && msg.message_type !== 'text' && msg.media_url ? (
+                          <div className="space-y-1.5">
+                            {(msg.message_type === 'image' || msg.message_type === 'sticker') && (
+                              <img
+                                src={msg.media_url}
+                                alt={msg.media_caption || 'Imagem'}
+                                className="max-w-full rounded-lg max-h-64 object-contain"
+                              />
+                            )}
+                            {msg.message_type === 'video' && (
+                              <video src={msg.media_url} controls className="max-w-full rounded-lg max-h-64" />
+                            )}
+                            {msg.message_type === 'audio' && (
+                              <div className="space-y-1">
+                                <audio src={msg.media_url} controls className="max-w-full" />
+                                {msg.transcript && (
+                                  <p className="text-xs italic opacity-80 whitespace-pre-wrap">
+                                    &ldquo;{msg.transcript}&rdquo;
+                                  </p>
+                                )}
+                              </div>
+                            )}
+                            {msg.message_type === 'document' && (
+                              <a
+                                href={msg.media_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-2 underline text-sm"
+                              >
+                                <FileText className="w-4 h-4 flex-shrink-0" />
+                                {msg.media_caption || 'Ver documento'}
+                              </a>
+                            )}
+                            {msg.media_caption && msg.message_type !== 'audio' && msg.message_type !== 'document' && (
+                              <p className="text-sm whitespace-pre-wrap">{msg.media_caption}</p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                        )}
+
                         <p className="text-xs opacity-70 mt-1">
                           {new Date(msg.created_at).toLocaleTimeString('pt-BR', {
                             hour: '2-digit',
@@ -686,6 +799,26 @@ export default function AtendimentoPage() {
               {/* Input */}
               <form onSubmit={handleSendMessage} className="p-6 border-t border-border bg-muted">
                 <div className="flex gap-3">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/*,audio/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                    onChange={handleAttachmentSelected}
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={uploadingMedia}
+                    title="Anexar arquivo"
+                    className="flex items-center justify-center w-10 h-10 flex-shrink-0 border border-border rounded-xl bg-white text-muted-foreground hover:text-primary hover:border-primary/40 transition-colors duration-150 disabled:opacity-50"
+                  >
+                    {uploadingMedia ? (
+                      <span className="w-4 h-4 border-2 border-primary/30 border-t-primary rounded-full animate-spin" />
+                    ) : (
+                      <Paperclip className="w-4 h-4" />
+                    )}
+                  </button>
                   <input
                     type="text"
                     value={messageInput}

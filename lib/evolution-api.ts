@@ -81,6 +81,93 @@ export async function sendTextMessage(instanceName: string, number: string, text
   });
 }
 
+export type EvolutionMediaType = 'image' | 'audio' | 'video' | 'document';
+
+/** Deriva a categoria de mídia da Evolution API (e do enum message_type) a partir do MIME type. */
+export function mimeToMediaCategory(mimeType: string): EvolutionMediaType {
+  if (mimeType.startsWith('image/')) return 'image';
+  if (mimeType.startsWith('audio/')) return 'audio';
+  if (mimeType.startsWith('video/')) return 'video';
+  return 'document';
+}
+
+/** Envia um arquivo de mídia (imagem, áudio, vídeo ou documento) pelo número conectado da instância. */
+export async function sendMediaMessage(
+  instanceName: string,
+  number: string,
+  mediatype: EvolutionMediaType,
+  mimetype: string,
+  fileName: string,
+  base64: string,
+  caption?: string
+) {
+  return evolutionFetch(`/message/sendMedia/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      number,
+      mediatype,
+      mimetype,
+      fileName,
+      caption: caption ?? '',
+      media: base64,
+    }),
+  });
+}
+
+interface GetMediaBase64Response {
+  base64?: string;
+  mimetype?: string;
+  mediaUrl?: string;
+}
+
+/**
+ * Baixa uma mídia recebida (imagem/áudio/vídeo/documento/figurinha) em base64,
+ * a partir do ID da mensagem do WhatsApp. Sem timeout curto propositalmente:
+ * vídeos demoram bem mais que os outros tipos pra Evolution API converter, e
+ * um timeout agressivo aqui derrubava o download antes de terminar.
+ */
+export async function getMediaBase64(
+  instanceName: string,
+  messageId: string,
+  remoteJid: string
+): Promise<{ base64: string; mimetype: string } | null> {
+  const data = (await evolutionFetch(`/chat/getBase64FromMediaMessage/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      message: {
+        key: {
+          id: messageId,
+          fromMe: false,
+          remoteJid,
+        },
+      },
+      convertToMp4: false,
+    }),
+  })) as GetMediaBase64Response;
+
+  if (data.base64) {
+    return {
+      base64: data.base64.replace(/^data:[^;]+;base64,/, ''),
+      mimetype: data.mimetype || 'application/octet-stream',
+    };
+  }
+
+  // Algumas versões da Evolution API retornam a URL do arquivo já hospedado
+  // em vez do base64 — buscamos e convertemos aqui para manter uma única
+  // interface (sempre base64) para quem chama esta função.
+  if (data.mediaUrl) {
+    const fileRes = await fetch(data.mediaUrl);
+    if (!fileRes.ok) return null;
+    const buffer = Buffer.from(await fileRes.arrayBuffer());
+    return {
+      base64: buffer.toString('base64'),
+      mimetype: data.mimetype || fileRes.headers.get('content-type') || 'application/octet-stream',
+    };
+  }
+
+  return null;
+}
+
 /** Gera um nome de instância único, prefixado para isolar do resto da Evolution API compartilhada. */
 export function generateInstanceName(workspaceId: string): string {
   return `zaptrix-${workspaceId.slice(0, 8)}-${Date.now().toString(36)}`;

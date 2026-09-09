@@ -323,3 +323,42 @@ body {
     transform: none;
   }
 }
+
+/* Kanban card — soft-lift hover for board cards (see app/(dashboard)/atendimento).
+   Same brand-tinted glow as .card-hover-glow, kept separate so the two can
+   diverge later without fighting over one shared class. */
+.kanban-card {
+  transition: box-shadow var(--duration-faster) ease-out, transform var(--duration-faster) ease-out,
+    border-color var(--duration-faster) ease-out;
+}
+
+.kanban-card:hover {
+  box-shadow: 0 10px 24px -10px rgba(37, 99, 235, 0.28);
+  border-color: rgba(37, 99, 235, 0.2);
+  transform: translateY(-2px);
+}
+
+.kanban-card[data-dragging='true'] {
+  opacity: 0.5;
+  box-shadow: 0 14px 28px -10px rgba(37, 99, 235, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .kanban-card {
+    transition: box-shadow var(--duration-faster) ease-out, border-color var(--duration-faster) ease-out;
+  }
+  .kanban-card:hover {
+    transform: none;
+  }
+}
+
+/* Overlapping avatar stack — small circular avatars pulled together with
+   negative margin, ring in the card background so they read as a stack. */
+.avatar-stack > * {
+  margin-left: -0.5rem;
+  border: 2px solid var(--card);
+}
+
+.avatar-stack > *:first-child {
+  margin-left: 0;
+}

@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendTextMessage } from '@/lib/evolution-api';
+import { sendTextMessage, getMediaBase64 } from '@/lib/evolution-api';
 import { decryptSecret } from '@/lib/security/encrypt';
 import { callLlm, ChatMessage } from '@/lib/llm-client';
 import { AiProvider } from '@/lib/ai-models';
+import { transcribeAudio } from '@/lib/transcription';
 
 interface BusinessHoursDay {
   enabled: boolean;
@@ -74,13 +75,101 @@ interface EvolutionWebhookPayload {
     instanceName?: string;
     key?: { remoteJid: string; fromMe: boolean; id: string };
     pushName?: string;
-    message?: { conversation?: string; extendedTextMessage?: { text?: string } };
+    message?: {
+      conversation?: string;
+      extendedTextMessage?: { text?: string };
+      imageMessage?: { mimetype?: string; caption?: string };
+      videoMessage?: { mimetype?: string; caption?: string };
+      documentMessage?: { mimetype?: string; fileName?: string; caption?: string; title?: string };
+      audioMessage?: { mimetype?: string; ptt?: boolean };
+      stickerMessage?: { mimetype?: string };
+    };
     messageTimestamp?: number;
   };
 }
 
 function extractText(data: EvolutionWebhookPayload['data']): string | null {
   return data.message?.conversation || data.message?.extendedTextMessage?.text || null;
+}
+
+type MediaMessageType = 'image' | 'video' | 'document' | 'audio' | 'sticker';
+
+interface MediaInfo {
+  mediaType: MediaMessageType | null;
+  mimeType: string | null;
+  caption: string | null;
+  fileName: string | null;
+}
+
+/**
+ * Detecta se a mensagem recebida é mídia, e de qual tipo — espelhando a
+ * ordem de prioridade usada pelo Jurix (produto irmão que já roda contra a
+ * mesma Evolution API compartilhada): imagem, vídeo, documento, áudio,
+ * figurinha. Se nenhum desses existir na mensagem, é texto puro.
+ */
+function extractMedia(data: EvolutionWebhookPayload['data']): MediaInfo {
+  const message = data.message;
+  const empty: MediaInfo = { mediaType: null, mimeType: null, caption: null, fileName: null };
+  if (!message) return empty;
+
+  if (message.imageMessage) {
+    return {
+      mediaType: 'image',
+      mimeType: message.imageMessage.mimetype || 'image/jpeg',
+      caption: message.imageMessage.caption || null,
+      fileName: null,
+    };
+  }
+  if (message.videoMessage) {
+    return {
+      mediaType: 'video',
+      mimeType: message.videoMessage.mimetype || 'video/mp4',
+      caption: message.videoMessage.caption || null,
+      fileName: null,
+    };
+  }
+  if (message.documentMessage) {
+    return {
+      mediaType: 'document',
+      mimeType: message.documentMessage.mimetype || 'application/octet-stream',
+      caption: message.documentMessage.caption || message.documentMessage.title || null,
+      fileName: message.documentMessage.fileName || message.documentMessage.title || null,
+    };
+  }
+  if (message.audioMessage) {
+    return {
+      mediaType: 'audio',
+      mimeType: message.audioMessage.mimetype || 'audio/ogg',
+      caption: null,
+      fileName: null,
+    };
+  }
+  if (message.stickerMessage) {
+    return {
+      mediaType: 'sticker',
+      mimeType: message.stickerMessage.mimetype || 'image/webp',
+      caption: null,
+      fileName: null,
+    };
+  }
+
+  return empty;
+}
+
+function extensionFromMime(mimeType: string): string {
+  const map: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/gif': 'gif',
+    'video/mp4': 'mp4',
+    'audio/ogg': 'ogg',
+    'audio/mpeg': 'mp3',
+    'application/pdf': 'pdf',
+  };
+  if (map[mimeType]) return map[mimeType];
+  const subtype = mimeType.split('/')[1]?.split(';')[0];
+  return subtype || 'bin';
 }
 
 interface AutoReplyParams {
@@ -152,17 +241,20 @@ async function tryAutoReply({
 
     const { data: recentMessages } = await admin
       .from('messages')
-      .select('sender_type, content')
+      .select('sender_type, content, transcript')
       .eq('conversation_id', conversationId)
       .order('created_at', { ascending: false })
       .limit(12);
 
+    // content já recebe o transcript no momento da gravação (ver extractMedia +
+    // transcribeAudio abaixo), mas mantemos o fallback aqui também — histórico
+    // nunca some por causa de content nulo em mensagem de áudio.
     const history: ChatMessage[] = (recentMessages || [])
       .reverse()
-      .filter((m) => m.content)
+      .filter((m) => m.content || m.transcript)
       .map((m) => ({
         role: m.sender_type === 'customer' ? 'user' : 'assistant',
-        content: m.content as string,
+        content: (m.content || m.transcript) as string,
       }));
 
     const systemPrompt = buildSystemPrompt(profile);
@@ -242,8 +334,9 @@ export async function POST(request: NextRequest) {
     const instanceName = payload.instance || payload.data.instanceName;
     const remoteJid = payload.data.key?.remoteJid;
     const text = extractText(payload.data);
+    const media = extractMedia(payload.data);
 
-    if (!instanceName || !remoteJid || !text) {
+    if (!instanceName || !remoteJid || (!text && !media.mediaType)) {
       return NextResponse.json({ status: 'ignored_incomplete' });
     }
 
@@ -328,6 +421,49 @@ export async function POST(request: NextRequest) {
       conversationId = newConversation.id;
     }
 
+    // Mídia (imagem/áudio/vídeo/documento/figurinha): baixa da Evolution API,
+    // sobe pro storage do workspace e, se for áudio, transcreve pra virar
+    // contexto de texto pra IA. Tudo best-effort — se qualquer etapa falhar,
+    // a mensagem ainda é salva (sem media_url/transcript), o texto continua
+    // funcionando normalmente e o fluxo de auto-reply não trava.
+    let mediaUrl: string | null = null;
+    let transcript: string | null = null;
+
+    if (media.mediaType) {
+      const whatsappMsgId = payload.data.key?.id;
+      if (whatsappMsgId) {
+        try {
+          const downloaded = await getMediaBase64(instanceName, whatsappMsgId, remoteJid);
+          if (downloaded) {
+            const mimeType = downloaded.mimetype || media.mimeType || 'application/octet-stream';
+            const ext = extensionFromMime(mimeType);
+            const path = `${workspaceId}/${conversationId}/${Date.now()}-${whatsappMsgId}.${ext}`;
+            const buffer = Buffer.from(downloaded.base64, 'base64');
+
+            const { error: uploadError } = await admin.storage
+              .from('message-media')
+              .upload(path, buffer, { contentType: mimeType, upsert: false });
+
+            if (!uploadError) {
+              const { data: publicUrlData } = admin.storage.from('message-media').getPublicUrl(path);
+              mediaUrl = publicUrlData.publicUrl;
+
+              if (media.mediaType === 'audio') {
+                transcript = await transcribeAudio(downloaded.base64, mimeType, workspaceId, admin);
+              }
+            } else {
+              console.error('Erro ao salvar mídia recebida no storage:', uploadError);
+            }
+          }
+        } catch (mediaError) {
+          console.error('Erro ao baixar mídia do WhatsApp:', mediaError);
+        }
+      }
+    }
+
+    // Texto explícito > transcrição de áudio > legenda de imagem/vídeo/documento.
+    const messageContent = text || transcript || media.caption || null;
+
     const { data: insertedMessage, error: messageError } = await admin
       .from('messages')
       .insert([
@@ -337,7 +473,12 @@ export async function POST(request: NextRequest) {
           external_message_id: payload.data.key?.id || null,
           direction: 'inbound',
           sender_type: 'customer',
-          content: text,
+          message_type: media.mediaType || 'text',
+          content: messageContent,
+          media_url: mediaUrl,
+          media_mime_type: media.mimeType,
+          media_caption: media.caption,
+          transcript,
         },
       ])
       .select('id')

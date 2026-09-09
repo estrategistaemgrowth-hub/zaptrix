@@ -20,13 +20,13 @@ import {
 } from 'lucide-react';
 
 const links = [
-  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { href: '/atendimento', label: 'Atendimento', icon: MessageSquare },
-  { href: '/contatos', label: 'Contatos', icon: Users },
-  { href: '/produtos', label: 'Produtos', icon: Package },
-  { href: '/conhecimento', label: 'Conhecimento', icon: BookOpen },
-  { href: '/ia', label: 'IA', icon: Brain },
-  { href: '/configuracoes', label: 'Configurações', icon: Settings },
+  { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard, ownerAdminOnly: false },
+  { href: '/atendimento', label: 'Atendimento', icon: MessageSquare, ownerAdminOnly: false },
+  { href: '/contatos', label: 'Contatos', icon: Users, ownerAdminOnly: false },
+  { href: '/produtos', label: 'Produtos', icon: Package, ownerAdminOnly: false },
+  { href: '/conhecimento', label: 'Conhecimento', icon: BookOpen, ownerAdminOnly: false },
+  { href: '/ia', label: 'IA', icon: Brain, ownerAdminOnly: true },
+  { href: '/configuracoes', label: 'Configurações', icon: Settings, ownerAdminOnly: true },
 ];
 
 const STORAGE_KEY = 'zaptrix-sidebar-collapsed';
@@ -63,6 +63,7 @@ export function Sidebar() {
   const [mounted, setMounted] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
   const [aiHandlingCount, setAiHandlingCount] = useState(0);
+  const [isOwnerOrAdmin, setIsOwnerOrAdmin] = useState(true);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
@@ -82,6 +83,8 @@ export function Sidebar() {
 
       const workspace = await ensureWorkspace(supabase, session.user.id, session.user.email);
       if (!workspace || cancelled) return;
+
+      setIsOwnerOrAdmin(workspace.role === 'owner' || workspace.role === 'admin');
 
       const { data } = await supabase
         .from('conversations')
@@ -143,7 +146,9 @@ export function Sidebar() {
       )}
 
       <nav className="flex-1 space-y-1 overflow-y-auto">
-        {links.map((link) => {
+        {links
+          .filter((link) => !link.ownerAdminOnly || isOwnerOrAdmin)
+          .map((link) => {
           const Icon = link.icon;
           const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
           const isAtendimento = link.href === '/atendimento';

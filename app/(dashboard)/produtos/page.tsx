@@ -76,6 +76,7 @@ export default function ProdutosPage() {
   const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
   const [editingCategoryName, setEditingCategoryName] = useState('');
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [canManageProducts, setCanManageProducts] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
@@ -152,6 +153,7 @@ export default function ProdutosPage() {
       }
 
       setWorkspaceId(workspace.workspaceId);
+      setCanManageProducts(workspace.role === 'owner' || workspace.role === 'admin');
       await Promise.all([loadProducts(workspace.workspaceId), loadCategories(workspace.workspaceId)]);
     } catch (err) {
       console.error('Erro ao carregar produtos:', err);
@@ -497,38 +499,42 @@ export default function ProdutosPage() {
                 <List className="w-4 h-4" />
               </button>
             </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".csv"
-              onChange={handleFileSelected}
-              className="hidden"
-            />
-            <button
-              onClick={() => fileInputRef.current?.click()}
-              className="flex items-center gap-2 px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-muted"
-            >
-              <Upload className="w-4 h-4" />
-              Importar planilha
-            </button>
-            <button
-              onClick={() => setShowCategoriesPanel(!showCategoriesPanel)}
-              className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium border ${
-                showCategoriesPanel
-                  ? 'bg-primary/10 text-primary border-primary/20'
-                  : 'border-border text-foreground hover:bg-muted'
-              }`}
-            >
-              <FolderOpen className="w-4 h-4" />
-              Categorias
-            </button>
-            <button
-              onClick={() => setShowForm(!showForm)}
-              className="gradient-brand flex items-center gap-2 px-6 py-2 text-white rounded-lg font-medium shadow-sm transition-all duration-200 hover:shadow-md hover:opacity-95"
-            >
-              <Plus className="w-4 h-4" />
-              Novo produto
-            </button>
+            {canManageProducts && (
+              <>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".csv"
+                  onChange={handleFileSelected}
+                  className="hidden"
+                />
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="flex items-center gap-2 px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-muted"
+                >
+                  <Upload className="w-4 h-4" />
+                  Importar planilha
+                </button>
+                <button
+                  onClick={() => setShowCategoriesPanel(!showCategoriesPanel)}
+                  className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium border ${
+                    showCategoriesPanel
+                      ? 'bg-primary/10 text-primary border-primary/20'
+                      : 'border-border text-foreground hover:bg-muted'
+                  }`}
+                >
+                  <FolderOpen className="w-4 h-4" />
+                  Categorias
+                </button>
+                <button
+                  onClick={() => setShowForm(!showForm)}
+                  className="gradient-brand flex items-center gap-2 px-6 py-2 text-white rounded-lg font-medium shadow-sm transition-all duration-200 hover:shadow-md hover:opacity-95"
+                >
+                  <Plus className="w-4 h-4" />
+                  Novo produto
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1088,7 +1094,7 @@ export default function ProdutosPage() {
                       ? 'Cadastre manualmente ou importe uma planilha para começar seu catálogo'
                       : 'Tente ajustar os filtros ou o termo de busca'}
                   </p>
-                  {products.length === 0 && (
+                  {products.length === 0 && canManageProducts && (
                     <button
                       onClick={() => setShowForm(true)}
                       className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
@@ -1123,6 +1129,7 @@ export default function ProdutosPage() {
                     <h3 className="text-lg font-semibold text-foreground line-clamp-2">
                       {product.name}
                     </h3>
+                    {canManageProducts && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1132,6 +1139,7 @@ export default function ProdutosPage() {
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
+                    )}
                   </div>
 
                   <div className="flex items-center gap-2 mb-2">
@@ -1234,7 +1242,7 @@ export default function ProdutosPage() {
                     ? 'Cadastre manualmente ou importe uma planilha para começar seu catálogo'
                     : 'Tente ajustar os filtros ou o termo de busca'}
                 </p>
-                {products.length === 0 && (
+                {products.length === 0 && canManageProducts && (
                   <button
                     onClick={() => setShowForm(true)}
                     className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
@@ -1354,6 +1362,7 @@ export default function ProdutosPage() {
                           )}
                         </td>
                         <td className="px-4 py-3 text-right">
+                          {canManageProducts && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
@@ -1363,6 +1372,7 @@ export default function ProdutosPage() {
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
+                          )}
                         </td>
                       </tr>
                       );
@@ -1391,6 +1401,7 @@ export default function ProdutosPage() {
           product={detailProduct}
           workspaceId={workspaceId}
           categories={categories}
+          readOnly={!canManageProducts}
           onClose={() => setDetailProduct(null)}
           onSaved={() => {
             setDetailProduct(null);

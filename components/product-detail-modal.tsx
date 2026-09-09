@@ -34,9 +34,13 @@ interface Props {
   categories: Category[];
   onClose: () => void;
   onSaved: () => void;
+  /** Atendente só visualiza — edição/exclusão de produto é owner/admin por RLS
+   *  (products UPDATE/DELETE), então aqui só desabilitamos os campos pra não
+   *  deixar a pessoa tentar salvar e esbarrar num erro cru de RLS. */
+  readOnly?: boolean;
 }
 
-export function ProductDetailModal({ product, workspaceId, categories, onClose, onSaved }: Props) {
+export function ProductDetailModal({ product, workspaceId, categories, onClose, onSaved, readOnly = false }: Props) {
   const [form, setForm] = useState({
     name: product.name,
     sku: product.sku || '',
@@ -187,12 +191,21 @@ export function ProductDetailModal({ product, workspaceId, categories, onClose, 
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-backdrop-in">
       <div className="bg-card rounded-2xl shadow-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto animate-modal-in">
         <div className="flex items-center justify-between p-6 border-b border-border sticky top-0 bg-card rounded-t-2xl">
-          <h2 className="text-xl font-semibold text-foreground">Editar produto</h2>
+          <h2 className="text-xl font-semibold text-foreground">
+            {readOnly ? 'Produto' : 'Editar produto'}
+          </h2>
           <button onClick={onClose} className="p-1 text-muted-foreground hover:text-foreground">
             <X className="w-5 h-5" />
           </button>
         </div>
 
+        {readOnly && (
+          <div className="mx-6 mt-4 p-3 bg-muted rounded-xl text-sm text-muted-foreground">
+            Apenas visualização — editar produtos é restrito a donos e administradores.
+          </div>
+        )}
+
+        <fieldset disabled={readOnly} className="contents">
         <div className="p-6 space-y-5">
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -508,15 +521,18 @@ export function ProductDetailModal({ product, workspaceId, categories, onClose, 
             Produto ativo (aparece nas recomendações da IA)
           </label>
         </div>
+        </fieldset>
 
         <div className="flex gap-3 p-6 border-t border-border sticky bottom-0 bg-card rounded-b-2xl">
-          <button
-            onClick={handleSave}
-            disabled={saving}
-            className="px-6 py-2 btn-gradient font-medium disabled:opacity-50"
-          >
-            {saving ? 'Salvando...' : 'Salvar alterações'}
-          </button>
+          {!readOnly && (
+            <button
+              onClick={handleSave}
+              disabled={saving}
+              className="px-6 py-2 btn-gradient font-medium disabled:opacity-50"
+            >
+              {saving ? 'Salvando...' : 'Salvar alterações'}
+            </button>
+          )}
           <button
             onClick={onClose}
             className="px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-background"

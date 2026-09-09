@@ -23,6 +23,7 @@ export default function ConhecimentoPage() {
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({ title: '', category: '', content: '' });
   const [submitting, setSubmitting] = useState(false);
+  const [canManage, setCanManage] = useState(true);
   const supabase = createClient();
 
   useEffect(() => {
@@ -42,6 +43,7 @@ export default function ConhecimentoPage() {
       }
 
       setWorkspaceId(workspace.workspaceId);
+      setCanManage(workspace.role === 'owner' || workspace.role === 'admin');
       await loadEntries(workspace.workspaceId);
     } catch (err) {
       console.error('Erro ao carregar entradas:', err);
@@ -129,13 +131,15 @@ export default function ConhecimentoPage() {
             <h1 className="text-3xl font-bold text-foreground">Base de Conhecimento</h1>
             <p className="text-muted-foreground">Conteúdo usado pela IA para responder clientes</p>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
-          >
-            <Upload className="w-4 h-4" />
-            Nova entrada
-          </button>
+          {canManage && (
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+            >
+              <Upload className="w-4 h-4" />
+              Nova entrada
+            </button>
+          )}
         </div>
 
         {error && (
@@ -224,13 +228,15 @@ export default function ConhecimentoPage() {
                 <p className="text-sm text-muted-foreground mb-6">
                   Comece adicionando documentação para treinar a IA
                 </p>
-                <button
-                  onClick={() => setShowForm(true)}
-                  className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
-                >
-                  <Upload className="w-4 h-4" />
-                  Nova entrada
-                </button>
+                {canManage && (
+                  <button
+                    onClick={() => setShowForm(true)}
+                    className="inline-flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+                  >
+                    <Upload className="w-4 h-4" />
+                    Nova entrada
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -253,25 +259,27 @@ export default function ConhecimentoPage() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-1 flex-shrink-0">
-                    <button
-                      onClick={() => handleToggleActive(entry)}
-                      title={entry.active ? 'Desativar' : 'Ativar'}
-                      className="p-1 text-muted-foreground hover:text-primary"
-                    >
-                      {entry.active ? (
-                        <ToggleRight className="w-5 h-5 text-primary" />
-                      ) : (
-                        <ToggleLeft className="w-5 h-5" />
-                      )}
-                    </button>
-                    <button
-                      onClick={() => handleDeleteEntry(entry.id)}
-                      className="p-1 text-destructive hover:bg-destructive/10 rounded"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
+                  {canManage && (
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <button
+                        onClick={() => handleToggleActive(entry)}
+                        title={entry.active ? 'Desativar' : 'Ativar'}
+                        className="p-1 text-muted-foreground hover:text-primary"
+                      >
+                        {entry.active ? (
+                          <ToggleRight className="w-5 h-5 text-primary" />
+                        ) : (
+                          <ToggleLeft className="w-5 h-5" />
+                        )}
+                      </button>
+                      <button
+                        onClick={() => handleDeleteEntry(entry.id)}
+                        className="p-1 text-destructive hover:bg-destructive/10 rounded"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <p className="text-sm text-muted-foreground line-clamp-3 mb-3">{entry.content}</p>

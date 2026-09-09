@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { PROVIDER_LABELS, PROVIDER_MODELS, AiProvider } from '@/lib/ai-models';
@@ -20,6 +21,7 @@ import {
   EyeOff,
   AlertTriangle,
   Users,
+  Pencil,
 } from 'lucide-react';
 
 type Section = 'membros' | 'whatsapp' | 'ia';
@@ -43,6 +45,7 @@ interface WorkspaceMember {
   user_id: string;
   role: 'owner' | 'admin' | 'atendente';
   created_at: string;
+  email: string | null;
 }
 
 interface WhatsAppConnection {
@@ -88,6 +91,11 @@ export default function ConfiguracoesPage() {
   const [showApiKey, setShowApiKey] = useState(false);
   const [savingAi, setSavingAi] = useState(false);
   const [activeSection, setActiveSection] = useState<Section>('membros');
+  const [editingMember, setEditingMember] = useState<WorkspaceMember | null>(null);
+  const [editEmail, setEditEmail] = useState('');
+  const [editPassword, setEditPassword] = useState('');
+  const [savingMember, setSavingMember] = useState(false);
+  const [memberError, setMemberError] = useState('');
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get('section') as Section | null;
@@ -145,17 +153,54 @@ export default function ConfiguracoesPage() {
   }
 
   async function loadMembers(wsId: string) {
-    const { data, error: loadError } = await supabase
-      .from('workspace_members')
-      .select('*')
-      .eq('workspace_id', wsId)
-      .order('created_at');
+    const res = await fetch('/api/workspace/members');
+    const result = await res.json();
 
-    if (loadError) {
-      setError('Erro ao carregar membros: ' + loadError.message);
+    if (!res.ok) {
+      setError('Erro ao carregar membros: ' + (result.error || ''));
       return;
     }
-    setMembers(data || []);
+    setMembers(result.members || []);
+  }
+
+  function openEditMember(member: WorkspaceMember) {
+    setEditingMember(member);
+    setEditEmail(member.email || '');
+    setEditPassword('');
+    setMemberError('');
+  }
+
+  async function handleSaveMember(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingMember) return;
+    setSavingMember(true);
+    setMemberError('');
+
+    try {
+      const res = await fetch('/api/workspace/members', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          memberId: editingMember.id,
+          email: editEmail !== editingMember.email ? editEmail : undefined,
+          password: editPassword || undefined,
+        }),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        setMemberError(result.error || 'Erro ao salvar');
+        setSavingMember(false);
+        return;
+      }
+
+      setEditingMember(null);
+      if (workspaceId) await loadMembers(workspaceId);
+    } catch (err) {
+      setMemberError('Erro inesperado ao salvar');
+    } finally {
+      setSavingMember(false);
+    }
   }
 
   async function loadConnections(wsId: string) {
@@ -465,7 +510,7 @@ export default function ConfiguracoesPage() {
                       />
                     </div>
                     <div>
-                      <p className="font-medium text-foreground">User {member.user_id.slice(0, 8)}</p>
+                      <p className="font-medium text-foreground">{member.email || 'Sem e-mail'}</p>
                       <p className="text-sm text-muted-foreground">
                         {member.role === 'owner'
                           ? 'Proprietário'
@@ -475,18 +520,84 @@ export default function ConfiguracoesPage() {
                       </p>
                     </div>
                   </div>
-                  {member.role !== 'owner' && (
+                  <div className="flex items-center gap-1">
                     <button
-                      onClick={() => handleRemoveMember(member.id)}
-                      className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
+                      onClick={() => openEditMember(member)}
+                      className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg"
+                      title="Editar e-mail e senha"
                     >
-                      <Trash2 className="w-4 h-4" />
+                      <Pencil className="w-4 h-4" />
                     </button>
-                  )}
+                    {member.role !== 'owner' && (
+                      <button
+                        onClick={() => handleRemoveMember(member.id)}
+                        className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))
             )}
           </div>
+
+          {editingMember && createPortal(
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-backdrop-in">
+              <div className="bg-card rounded-2xl shadow-lg w-full max-w-sm p-6 animate-modal-in">
+                <h3 className="text-lg font-semibold text-foreground mb-4">Editar acesso</h3>
+
+                {memberError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                    {memberError}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveMember} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">E-mail</label>
+                    <input
+                      type="email"
+                      value={editEmail}
+                      onChange={(e) => setEditEmail(e.target.value)}
+                      required
+                      className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Nova senha (deixe em branco para não alterar)
+                    </label>
+                    <input
+                      type="password"
+                      value={editPassword}
+                      onChange={(e) => setEditPassword(e.target.value)}
+                      minLength={6}
+                      placeholder="••••••••"
+                      className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                    />
+                  </div>
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="submit"
+                      disabled={savingMember}
+                      className="btn-gradient font-medium px-6 py-2 disabled:opacity-50"
+                    >
+                      {savingMember ? 'Salvando...' : 'Salvar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingMember(null)}
+                      className="px-6 py-2 border border-border text-foreground rounded-full font-medium hover:bg-background"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            document.body
+          )}
         </div>
         )}
 

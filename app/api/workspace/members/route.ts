@@ -6,6 +6,98 @@ function generateTempPassword() {
   return Math.random().toString(36).slice(-6) + Math.random().toString(36).slice(-6).toUpperCase() + '!1';
 }
 
+export async function GET() {
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+  }
+
+  const { data: membership } = await supabase
+    .from('workspace_members')
+    .select('workspace_id')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!membership) {
+    return NextResponse.json({ error: 'Workspace não encontrado' }, { status: 404 });
+  }
+
+  const { data: members, error: membersError } = await supabase
+    .from('workspace_members')
+    .select('id, user_id, role, created_at')
+    .eq('workspace_id', membership.workspace_id)
+    .order('created_at');
+
+  if (membersError) {
+    return NextResponse.json({ error: membersError.message }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+  const withEmail = await Promise.all(
+    (members || []).map(async (m) => {
+      const { data } = await admin.auth.admin.getUserById(m.user_id);
+      return { ...m, email: data.user?.email || null };
+    })
+  );
+
+  return NextResponse.json({ members: withEmail });
+}
+
+export async function PATCH(request: NextRequest) {
+  const { memberId, email, password } = await request.json();
+
+  if (!memberId || (!email && !password)) {
+    return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
+  }
+
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+  }
+
+  const { data: membership } = await supabase
+    .from('workspace_members')
+    .select('workspace_id, role')
+    .eq('user_id', user.id)
+    .maybeSingle();
+
+  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    return NextResponse.json({ error: 'Sem permissão para editar membros' }, { status: 403 });
+  }
+
+  const { data: target } = await supabase
+    .from('workspace_members')
+    .select('user_id')
+    .eq('id', memberId)
+    .eq('workspace_id', membership.workspace_id)
+    .maybeSingle();
+
+  if (!target) {
+    return NextResponse.json({ error: 'Membro não encontrado' }, { status: 404 });
+  }
+
+  const admin = createAdminClient();
+  const updates: { email?: string; password?: string } = {};
+  if (email) updates.email = email;
+  if (password) updates.password = password;
+
+  const { error: updateError } = await admin.auth.admin.updateUserById(target.user_id, updates);
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ status: 'ok' });
+}
+
 export async function POST(request: NextRequest) {
   const { email, role } = await request.json();
 

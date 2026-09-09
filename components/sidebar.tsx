@@ -5,6 +5,7 @@ import Image from 'next/image';
 import { usePathname, useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { ensureWorkspace } from '@/lib/workspace';
 import {
   LayoutDashboard,
   MessageSquare,
@@ -60,11 +61,46 @@ export function Sidebar() {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [aiHandlingCount, setAiHandlingCount] = useState(0);
 
   useEffect(() => {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored === '1') setCollapsed(true);
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    const supabase = createClient();
+    let cancelled = false;
+
+    async function loadCounters() {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.user) return;
+
+      const workspace = await ensureWorkspace(supabase, session.user.id, session.user.email);
+      if (!workspace || cancelled) return;
+
+      const { data } = await supabase
+        .from('conversations')
+        .select('unread_count, ai_enabled')
+        .eq('workspace_id', workspace.workspaceId)
+        .eq('status', 'open');
+
+      if (cancelled || !data) return;
+
+      setUnreadCount(data.reduce((sum, c) => sum + (c.unread_count || 0), 0));
+      setAiHandlingCount(data.filter((c) => c.ai_enabled).length);
+    }
+
+    loadCounters();
+    const interval = setInterval(loadCounters, 20000);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, []);
 
   function toggleCollapsed() {
@@ -110,13 +146,14 @@ export function Sidebar() {
         {links.map((link) => {
           const Icon = link.icon;
           const isActive = pathname === link.href || pathname.startsWith(link.href + '/');
+          const isAtendimento = link.href === '/atendimento';
 
           return (
             <Link
               key={link.href}
               href={link.href}
               title={collapsed ? link.label : undefined}
-              className={`group flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 ${
+              className={`group relative flex items-center gap-3 px-4 py-2.5 rounded-xl transition-all duration-200 ${
                 collapsed ? 'justify-center px-0' : ''
               } ${
                 isActive
@@ -124,8 +161,26 @@ export function Sidebar() {
                   : 'text-muted-foreground hover:bg-muted hover:text-foreground'
               }`}
             >
-              <Icon className="w-4 h-4 flex-shrink-0 transition-transform duration-200 group-hover:scale-110" />
+              <span className="relative flex-shrink-0">
+                <Icon className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
+                {isAtendimento && unreadCount > 0 && (
+                  <span
+                    title={`${unreadCount} mensagem(ns) não lida(s)`}
+                    className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-destructive ring-2 ring-card animate-pulse"
+                  />
+                )}
+              </span>
               {!collapsed && <span className="text-sm">{link.label}</span>}
+              {!collapsed && isAtendimento && aiHandlingCount > 0 && (
+                <span
+                  title={`${aiHandlingCount} conversa(s) sendo atendida(s) pela IA`}
+                  className={`ml-auto flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-medium ${
+                    isActive ? 'bg-white/20 text-white' : 'gradient-brand text-white'
+                  }`}
+                >
+                  {aiHandlingCount}
+                </span>
+              )}
             </Link>
           );
         })}

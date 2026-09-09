@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
+import { StatusBadge } from '@/components/status-badge';
 
 interface Conversation {
   id: string;
@@ -199,6 +200,21 @@ export default function AtendimentoPage() {
     setSelectedConversation((current) =>
       current ? normalized.find((c) => c.id === current.id) || current : current
     );
+  }
+
+  async function handleSelectConversation(conv: Conversation) {
+    setSelectedConversation(conv);
+
+    if (!conv.unread_count) return;
+
+    // Zera localmente na hora (feedback imediato) e persiste no banco — sem
+    // isso, o próximo polling de loadConversations traria o valor antigo de
+    // volta e a notificação "voltaria" sozinha.
+    setConversations((current) =>
+      current.map((c) => (c.id === conv.id ? { ...c, unread_count: 0 } : c))
+    );
+
+    await supabase.from('conversations').update({ unread_count: 0 }).eq('id', conv.id);
   }
 
   async function loadMessages(conversationId: string) {
@@ -478,7 +494,7 @@ export default function AtendimentoPage() {
                 return (
                 <button
                   key={conv.id}
-                  onClick={() => setSelectedConversation(conv)}
+                  onClick={() => handleSelectConversation(conv)}
                   className={`w-full p-4 border-b border-border text-left transition-all duration-200 ${
                     selectedConversation?.id === conv.id
                       ? 'bg-primary/5 font-semibold'
@@ -583,47 +599,60 @@ export default function AtendimentoPage() {
                           draggable
                           onDragStart={(e) => handleCardDragStart(e, conv.id)}
                           onDragEnd={handleCardDragEnd}
-                          onClick={() => setSelectedConversation(conv)}
-                          className={`bg-white border rounded-xl p-3 cursor-grab active:cursor-grabbing transition-all duration-200 hover:shadow-md hover:border-primary/30 animate-fade-in ${
-                            draggedId === conv.id ? 'opacity-40' : ''
-                          } ${
-                            selectedConversation?.id === conv.id ? 'border-primary/40 ring-1 ring-primary/20' : 'border-border'
+                          onClick={() => handleSelectConversation(conv)}
+                          data-dragging={draggedId === conv.id}
+                          className={`kanban-card bg-white border rounded-2xl p-3.5 cursor-grab active:cursor-grabbing animate-fade-in ${
+                            selectedConversation?.id === conv.id
+                              ? 'border-primary/40 ring-1 ring-primary/20'
+                              : 'border-border'
                           }`}
                         >
+                          <div className="flex items-center justify-between gap-2 mb-2.5">
+                            {conv.ai_enabled ? (
+                              <StatusBadge label="IA" icon={Bot} active className="!py-0.5 !text-[11px]" />
+                            ) : (
+                              <StatusBadge
+                                label="Manual"
+                                icon={BotOff}
+                                active={false}
+                                tone="neutral"
+                                className="!py-0.5 !text-[11px]"
+                              />
+                            )}
+                            {typeof conv.unread_count === 'number' && conv.unread_count > 0 && (
+                              <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 flex items-center justify-center gradient-brand text-white text-[11px] font-semibold rounded-full shadow-sm">
+                                {conv.unread_count}
+                              </span>
+                            )}
+                          </div>
+
                           <div className="flex items-start gap-2.5">
                             <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-xs flex-shrink-0">
                               {initial}
                             </div>
                             <div className="flex-1 min-w-0">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="font-medium text-foreground text-sm line-clamp-1">{label}</p>
-                                {typeof conv.unread_count === 'number' && conv.unread_count > 0 && (
-                                  <span className="flex-shrink-0 min-w-[18px] h-[18px] px-1 flex items-center justify-center bg-primary text-white text-[10px] font-semibold rounded-full">
-                                    {conv.unread_count}
-                                  </span>
-                                )}
-                              </div>
+                              <p className="font-medium text-foreground text-sm line-clamp-1">{label}</p>
                               <p className="text-xs text-muted-foreground line-clamp-1">
                                 {conv.contact?.phone || '—'}
                               </p>
-                              <p className="text-xs text-muted-foreground line-clamp-1 mt-1">{preview}</p>
-                              <div className="flex items-center gap-2 mt-2">
-                                {ago && (
-                                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                                    <Clock className="w-3 h-3" />
-                                    {ago}
-                                  </span>
-                                )}
-                                {conv.ai_enabled ? (
-                                  <span className="flex items-center gap-1 text-[11px] text-primary">
-                                    <Bot className="w-3 h-3" /> IA
-                                  </span>
-                                ) : (
-                                  <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
-                                    <BotOff className="w-3 h-3" /> Manual
-                                  </span>
-                                )}
-                              </div>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground line-clamp-2 mt-2.5 leading-relaxed">
+                            {preview}
+                          </p>
+
+                          <div className="flex items-center justify-between mt-3 pt-3 border-t border-border">
+                            {ago ? (
+                              <span className="flex items-center gap-1 text-[11px] text-muted-foreground">
+                                <Clock className="w-3 h-3" />
+                                {ago}
+                              </span>
+                            ) : (
+                              <span />
+                            )}
+                            <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[10px] ring-2 ring-card">
+                              {initial}
                             </div>
                           </div>
 

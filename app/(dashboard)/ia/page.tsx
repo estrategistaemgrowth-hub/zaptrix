@@ -3,7 +3,41 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { Save, Zap, ToggleLeft, ToggleRight, LifeBuoy, TrendingUp, MessageCircle, Gift, Check } from 'lucide-react';
+import { Save, Zap, ToggleLeft, ToggleRight, LifeBuoy, TrendingUp, MessageCircle, Gift, Check, Clock } from 'lucide-react';
+
+interface BusinessHoursDay {
+  enabled: boolean;
+  start: string;
+  end: string;
+}
+
+type BusinessHours = Record<
+  'monday' | 'tuesday' | 'wednesday' | 'thursday' | 'friday' | 'saturday' | 'sunday',
+  BusinessHoursDay
+>;
+
+const WEEK_DAYS: { key: keyof BusinessHours; label: string }[] = [
+  { key: 'monday', label: 'Segunda' },
+  { key: 'tuesday', label: 'Terça' },
+  { key: 'wednesday', label: 'Quarta' },
+  { key: 'thursday', label: 'Quinta' },
+  { key: 'friday', label: 'Sexta' },
+  { key: 'saturday', label: 'Sábado' },
+  { key: 'sunday', label: 'Domingo' },
+];
+
+const defaultBusinessHours: BusinessHours = {
+  monday: { enabled: true, start: '09:00', end: '18:00' },
+  tuesday: { enabled: true, start: '09:00', end: '18:00' },
+  wednesday: { enabled: true, start: '09:00', end: '18:00' },
+  thursday: { enabled: true, start: '09:00', end: '18:00' },
+  friday: { enabled: true, start: '09:00', end: '18:00' },
+  saturday: { enabled: false, start: '09:00', end: '13:00' },
+  sunday: { enabled: false, start: '09:00', end: '13:00' },
+};
+
+const defaultOutOfHoursMessage =
+  'Nosso atendimento automático está fora do horário de funcionamento. Retornaremos assim que possível!';
 
 interface AIProfile {
   id: string;
@@ -19,6 +53,9 @@ interface AIProfile {
   business_rules: string | null;
   enabled: boolean;
   use_knowledge_base: boolean;
+  business_hours_enabled: boolean;
+  business_hours: BusinessHours | null;
+  out_of_hours_message: string | null;
 }
 
 const emptyForm = {
@@ -34,6 +71,9 @@ const emptyForm = {
   business_rules: '',
   enabled: true,
   use_knowledge_base: true,
+  business_hours_enabled: false,
+  business_hours: defaultBusinessHours,
+  out_of_hours_message: defaultOutOfHoursMessage,
 };
 
 interface AgentTemplate {
@@ -171,6 +211,16 @@ export default function IaPage() {
     window.setTimeout(() => setAppliedTemplate(null), 2500);
   }
 
+  function updateBusinessHoursDay(day: keyof BusinessHours, patch: Partial<BusinessHoursDay>) {
+    setFormData((prev) => ({
+      ...prev,
+      business_hours: {
+        ...prev.business_hours,
+        [day]: { ...prev.business_hours[day], ...patch },
+      },
+    }));
+  }
+
   useEffect(() => {
     init();
   }, []);
@@ -212,6 +262,9 @@ export default function IaPage() {
           business_rules: data.business_rules || '',
           enabled: data.enabled,
           use_knowledge_base: data.use_knowledge_base ?? true,
+          business_hours_enabled: data.business_hours_enabled ?? false,
+          business_hours: data.business_hours || defaultBusinessHours,
+          out_of_hours_message: data.out_of_hours_message || defaultOutOfHoursMessage,
         });
       }
     } catch (err) {
@@ -371,6 +424,102 @@ export default function IaPage() {
               {formData.use_knowledge_base ? 'Ativado' : 'Desativado'}
             </button>
           </div>
+        </div>
+
+        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
+          <div className="flex items-start justify-between gap-4 mb-1">
+            <div>
+              <h3 className="text-lg font-semibold text-foreground mb-1 flex items-center gap-2">
+                <Clock className="w-4 h-4 text-primary" />
+                Horário de Atendimento
+              </h3>
+              <p className="text-sm text-muted-foreground">
+                Quando ativado, a IA só responde dentro dos horários configurados abaixo. Fora
+                deles, envia a mensagem de ausência automaticamente.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() =>
+                setFormData({ ...formData, business_hours_enabled: !formData.business_hours_enabled })
+              }
+              className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex-shrink-0 ${
+                formData.business_hours_enabled
+                  ? 'gradient-brand text-white shadow-sm'
+                  : 'bg-muted text-muted-foreground'
+              }`}
+            >
+              {formData.business_hours_enabled ? (
+                <ToggleRight className="w-5 h-5" />
+              ) : (
+                <ToggleLeft className="w-5 h-5" />
+              )}
+              {formData.business_hours_enabled ? 'Ativado' : 'Desativado'}
+            </button>
+          </div>
+
+          {formData.business_hours_enabled && (
+            <div className="mt-5 space-y-4">
+              <div className="divide-y divide-border border border-border rounded-xl overflow-hidden">
+                {WEEK_DAYS.map(({ key, label }) => {
+                  const day = formData.business_hours[key];
+                  return (
+                    <div
+                      key={key}
+                      className="flex items-center gap-4 p-3 bg-muted"
+                    >
+                      <button
+                        type="button"
+                        onClick={() => updateBusinessHoursDay(key, { enabled: !day.enabled })}
+                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex-shrink-0 w-28 justify-center ${
+                          day.enabled
+                            ? 'gradient-brand text-white shadow-sm'
+                            : 'bg-white text-muted-foreground border border-border'
+                        }`}
+                      >
+                        {day.enabled ? (
+                          <ToggleRight className="w-4 h-4" />
+                        ) : (
+                          <ToggleLeft className="w-4 h-4" />
+                        )}
+                        {label}
+                      </button>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="time"
+                          value={day.start}
+                          disabled={!day.enabled}
+                          onChange={(e) => updateBusinessHoursDay(key, { start: e.target.value })}
+                          className="px-3 py-1.5 border border-border rounded-lg bg-white text-foreground text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                        <span className="text-muted-foreground text-sm">até</span>
+                        <input
+                          type="time"
+                          value={day.end}
+                          disabled={!day.enabled}
+                          onChange={(e) => updateBusinessHoursDay(key, { end: e.target.value })}
+                          className="px-3 py-1.5 border border-border rounded-lg bg-white text-foreground text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-2">
+                  Mensagem fora do horário
+                </label>
+                <textarea
+                  value={formData.out_of_hours_message}
+                  onChange={(e) => setFormData({ ...formData, out_of_hours_message: e.target.value })}
+                  className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  placeholder="ex: Nosso atendimento automático está fora do horário de funcionamento. Retornaremos assim que possível!"
+                  rows={2}
+                />
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bg-card border border-border rounded-2xl shadow-sm p-8">

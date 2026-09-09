@@ -13,6 +13,7 @@ interface Product {
   price: number;
   promotional_price: number | null;
   category: string | null;
+  category_id: string | null;
   tags: string[] | null;
   purchase_url: string | null;
   image_url: string | null;
@@ -22,14 +23,20 @@ interface Product {
   active: boolean;
 }
 
+interface Category {
+  id: string;
+  name: string;
+}
+
 interface Props {
   product: Product;
   workspaceId: string;
+  categories: Category[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export function ProductDetailModal({ product, workspaceId, onClose, onSaved }: Props) {
+export function ProductDetailModal({ product, workspaceId, categories, onClose, onSaved }: Props) {
   const [form, setForm] = useState({
     name: product.name,
     sku: product.sku || '',
@@ -37,6 +44,7 @@ export function ProductDetailModal({ product, workspaceId, onClose, onSaved }: P
     price: String(product.price),
     promotional_price: product.promotional_price !== null ? String(product.promotional_price) : '',
     category: product.category || '',
+    category_id: product.category_id || '',
     tagsInput: (product.tags || []).join(', '),
     purchase_url: product.purchase_url || '',
     image_url: product.image_url || '',
@@ -135,6 +143,8 @@ export function ProductDetailModal({ product, workspaceId, onClose, onSaved }: P
       .map((t) => t.trim())
       .filter(Boolean);
 
+    const selectedCategory = categories.find((c) => c.id === form.category_id);
+
     const { error: updateError } = await supabase
       .from('products')
       .update({
@@ -143,7 +153,8 @@ export function ProductDetailModal({ product, workspaceId, onClose, onSaved }: P
         description: form.description || null,
         price: parseFloat(form.price),
         promotional_price: form.promotional_price ? parseFloat(form.promotional_price) : null,
-        category: form.category || null,
+        category: selectedCategory ? selectedCategory.name : null,
+        category_id: form.category_id || null,
         tags,
         purchase_url: form.purchase_url || null,
         image_url: form.image_url || null,
@@ -283,12 +294,22 @@ export function ProductDetailModal({ product, workspaceId, onClose, onSaved }: P
             </div>
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">Categoria</label>
-              <input
-                type="text"
-                value={form.category}
-                onChange={(e) => setForm({ ...form, category: e.target.value })}
+              <select
+                value={form.category_id}
+                onChange={(e) => {
+                  const id = e.target.value;
+                  const cat = categories.find((c) => c.id === id);
+                  setForm({ ...form, category_id: id, category: cat ? cat.name : '' });
+                }}
                 className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
-              />
+              >
+                <option value="">Nenhuma categoria</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.name}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

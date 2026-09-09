@@ -63,9 +63,80 @@ function buildSystemPrompt(profile: {
   if (profile.business_rules) lines.push(`Regras de negócio: ${profile.business_rules}`);
   lines.push(
     'Responda sempre em português do Brasil, de forma natural para WhatsApp (mensagens curtas, sem markdown). ' +
-      'Nunca invente informações, preços ou prazos que não tenha recebido de contexto.'
+      'Nunca invente informações, preços ou prazos que não tenha recebido de contexto. ' +
+      'Fale apenas sobre os produtos e categorias reais desta loja, listados na Base de Conhecimento e no ' +
+      'catálogo de produtos abaixo — nunca mencione produto, categoria ou segmento que não esteja nessa lista.'
   );
   return lines.join('\n');
+}
+
+function formatPrice(value: number | null): string {
+  if (value === null || value === undefined) return '';
+  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+}
+
+/**
+ * Busca a Base de Conhecimento e o catálogo de Produtos do workspace e monta
+ * um bloco de contexto pra injetar no prompt da IA — só quando
+ * ai_profiles.use_knowledge_base está ativo (toggle "Usar Conhecimento e
+ * Produtos" da página de IA). Limita quantidade/tamanho pra não estourar o
+ * contexto do modelo em catálogos grandes.
+ */
+async function buildKnowledgeContext(
+  admin: ReturnType<typeof createAdminClient>,
+  workspaceId: string
+): Promise<string> {
+  const [{ data: entries }, { data: products }] = await Promise.all([
+    admin
+      .from('knowledge_entries')
+      .select('title, category, content')
+      .eq('workspace_id', workspaceId)
+      .eq('active', true)
+      .order('updated_at', { ascending: false })
+      .limit(20),
+    admin
+      .from('products')
+      .select('name, category, price, promotional_price, stock_quantity, description')
+      .eq('workspace_id', workspaceId)
+      .eq('active', true)
+      .order('updated_at', { ascending: false })
+      .limit(60),
+  ]);
+
+  const blocks: string[] = [];
+
+  if (entries && entries.length > 0) {
+    const lines = entries.map(
+      (e) => `- ${e.title}${e.category ? ` (${e.category})` : ''}: ${(e.content || '').slice(0, 400)}`
+    );
+    blocks.push(`Base de Conhecimento da loja:\n${lines.join('\n')}`);
+  }
+
+  if (products && products.length > 0) {
+    const lines = products.map((p) => {
+      const price = formatPrice(p.price);
+      const promo = p.promotional_price ? ` (promoção: ${formatPrice(p.promotional_price)})` : '';
+      const stock =
+        typeof p.stock_quantity === 'number'
+          ? p.stock_quantity > 0
+            ? `estoque: ${p.stock_quantity}`
+            : 'sem estoque'
+          : '';
+      const desc = p.description ? ` — ${p.description.slice(0, 150)}` : '';
+      return `- ${p.name}${p.category ? ` (${p.category})` : ''}: ${price}${promo}${
+        stock ? `, ${stock}` : ''
+      }${desc}`;
+    });
+    blocks.push(`Catálogo de produtos da loja:\n${lines.join('\n')}`);
+  }
+
+  if (blocks.length === 0) return '';
+
+  return (
+    '\n\nUse as informações abaixo (Base de Conhecimento e catálogo de produtos) para responder o cliente ' +
+    'com dados reais. Nunca invente preço, estoque ou informação que não esteja aqui.\n\n' +
+    blocks.join('\n\n')
+  );
 }
 
 interface EvolutionWebhookPayload {
@@ -257,7 +328,10 @@ async function tryAutoReply({
         content: (m.content || m.transcript) as string,
       }));
 
-    const systemPrompt = buildSystemPrompt(profile);
+    const knowledgeContext = profile.use_knowledge_base
+      ? await buildKnowledgeContext(admin, workspaceId)
+      : '';
+    const systemPrompt = buildSystemPrompt(profile) + knowledgeContext;
     const apiKey = decryptSecret(credential.encrypted_api_key);
 
     const replyText = await callLlm(
@@ -333,6 +407,14 @@ export async function POST(request: NextRequest) {
 
     const instanceName = payload.instance || payload.data.instanceName;
     const remoteJid = payload.data.key?.remoteJid;
+
+    // Mensagens de GRUPO (JID termina em @g.us) não são clientes falando com a
+    // loja — são conversas de grupo que o número conectado participa (ex: um
+    // grupo de família/trabalho). Sem esse filtro, cada mensagem de grupo virava
+    // um "contato"/"conversa" falso no Atendimento, incluindo spam encaminhado.
+    if (remoteJid?.endsWith('@g.us')) {
+      return NextResponse.json({ status: 'ignored_group_message' });
+    }
     const text = extractText(payload.data);
     const media = extractMedia(payload.data);
 

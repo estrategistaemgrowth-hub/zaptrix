@@ -6,7 +6,7 @@ import { ensureWorkspace } from '@/lib/workspace';
 import { readFileAsText, parseProductsCsv, ImportResult } from '@/lib/csv-import';
 import { ProductDetailModal } from '@/components/product-detail-modal';
 import { SkeletonCard, Skeleton } from '@/components/skeleton';
-import { Plus, Trash2, Tag, Upload, FileSpreadsheet, X, Loader2, Search, SlidersHorizontal, ExternalLink, LayoutGrid, List, PackageSearch } from 'lucide-react';
+import { Plus, Trash2, Tag, Upload, FileSpreadsheet, X, Loader2, Search, SlidersHorizontal, ExternalLink, LayoutGrid, List, PackageSearch, FolderOpen, ChevronDown, Pencil, Check } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -16,6 +16,7 @@ interface Product {
   price: number;
   promotional_price: number | null;
   category: string | null;
+  category_id: string | null;
   tags: string[] | null;
   purchase_url: string | null;
   image_url: string | null;
@@ -23,6 +24,11 @@ interface Product {
   variant_size: string | null;
   variant_color: string | null;
   active: boolean;
+}
+
+interface Category {
+  id: string;
+  name: string;
 }
 
 const BATCH_SIZE = 200;
@@ -40,6 +46,7 @@ export default function ProdutosPage() {
     price: '',
     promotional_price: '',
     category: '',
+    category_id: '',
     tagsInput: '',
     purchase_url: '',
     image_url: '',
@@ -60,11 +67,21 @@ export default function ProdutosPage() {
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [newVariantType, setNewVariantType] = useState<'none' | 'simple_size' | 'simple_color' | 'composite'>('none');
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [showCategoriesPanel, setShowCategoriesPanel] = useState(false);
+  const [newCategoryName, setNewCategoryName] = useState('');
+  const [categoryError, setCategoryError] = useState('');
+  const [editingCategoryId, setEditingCategoryId] = useState<string | null>(null);
+  const [editingCategoryName, setEditingCategoryName] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
+  const categoryNameById = new Map(categories.map((c) => [c.id, c.name]));
   const allCategories = Array.from(
-    new Set(products.map((p) => p.category).filter((c): c is string => !!c))
+    new Set([
+      ...categories.map((c) => c.name),
+      ...products.map((p) => p.category).filter((c): c is string => !!c),
+    ])
   ).sort();
   const allTags = Array.from(new Set(products.flatMap((p) => p.tags || []))).sort();
 
@@ -73,7 +90,12 @@ export default function ProdutosPage() {
     if (term && !p.name.toLowerCase().includes(term) && !(p.sku || '').toLowerCase().includes(term)) {
       return false;
     }
-    if (categoryFilter && p.category !== categoryFilter) return false;
+    if (categoryFilter) {
+      // Prioriza o nome atual da categoria vinculada (category_id); produtos
+      // ainda não vinculados caem no texto livre antigo (category).
+      const effectiveCategory = p.category_id ? categoryNameById.get(p.category_id) ?? p.category : p.category;
+      if (effectiveCategory !== categoryFilter) return false;
+    }
     if (stockFilter === 'in_stock' && !(p.stock_quantity && p.stock_quantity > 0)) return false;
     if (stockFilter === 'out_of_stock' && !(p.stock_quantity !== null && p.stock_quantity <= 0)) {
       return false;
@@ -123,7 +145,7 @@ export default function ProdutosPage() {
       }
 
       setWorkspaceId(workspace.workspaceId);
-      await loadProducts(workspace.workspaceId);
+      await Promise.all([loadProducts(workspace.workspaceId), loadCategories(workspace.workspaceId)]);
     } catch (err) {
       console.error('Erro ao carregar produtos:', err);
     } finally {
@@ -144,6 +166,94 @@ export default function ProdutosPage() {
     }
 
     setProducts(data || []);
+  }
+
+  async function loadCategories(wsId: string) {
+    const { data, error: loadError } = await supabase
+      .from('categories')
+      .select('id, name')
+      .eq('workspace_id', wsId)
+      .order('name', { ascending: true });
+
+    if (loadError) {
+      console.error('Erro ao carregar categorias:', loadError);
+      return;
+    }
+
+    setCategories(data || []);
+  }
+
+  async function handleCreateCategory(e: React.FormEvent) {
+    e.preventDefault();
+    if (!workspaceId || !newCategoryName.trim()) return;
+
+    setCategoryError('');
+
+    const { error: insertError } = await supabase
+      .from('categories')
+      .insert([{ workspace_id: workspaceId, name: newCategoryName.trim() }]);
+
+    if (insertError) {
+      setCategoryError(
+        insertError.code === '23505'
+          ? 'Já existe uma categoria com esse nome.'
+          : 'Erro ao criar categoria: ' + insertError.message
+      );
+      return;
+    }
+
+    setNewCategoryName('');
+    await loadCategories(workspaceId);
+  }
+
+  function startEditingCategory(cat: Category) {
+    setCategoryError('');
+    setEditingCategoryId(cat.id);
+    setEditingCategoryName(cat.name);
+  }
+
+  async function handleRenameCategory(id: string) {
+    if (!workspaceId || !editingCategoryName.trim()) return;
+
+    setCategoryError('');
+    const newName = editingCategoryName.trim();
+
+    const { error: updateError } = await supabase
+      .from('categories')
+      .update({ name: newName })
+      .eq('id', id);
+
+    if (updateError) {
+      setCategoryError(
+        updateError.code === '23505'
+          ? 'Já existe uma categoria com esse nome.'
+          : 'Erro ao renomear categoria: ' + updateError.message
+      );
+      return;
+    }
+
+    // Mantém products.category (texto legado) sincronizado com o novo nome.
+    await supabase.from('products').update({ category: newName }).eq('category_id', id);
+
+    setEditingCategoryId(null);
+    setEditingCategoryName('');
+    await Promise.all([loadCategories(workspaceId), loadProducts(workspaceId)]);
+  }
+
+  async function handleDeleteCategory(id: string, name: string) {
+    if (
+      !workspaceId ||
+      !confirm(`Excluir a categoria "${name}"? Os produtos vinculados ficam sem categoria — nenhum produto é apagado.`)
+    ) {
+      return;
+    }
+
+    const { error: deleteError } = await supabase.from('categories').delete().eq('id', id);
+    if (deleteError) {
+      alert('Erro ao excluir categoria: ' + deleteError.message);
+      return;
+    }
+    await Promise.all([loadCategories(workspaceId), loadProducts(workspaceId)]);
   }
 
   async function handleAddProduct(e: React.FormEvent) {
@@ -169,6 +279,7 @@ export default function ProdutosPage() {
           ? parseFloat(formData.promotional_price)
           : null,
         category: formData.category || null,
+        category_id: formData.category_id || null,
         tags,
         purchase_url: formData.purchase_url || null,
         image_url: formData.image_url || null,
@@ -198,6 +309,7 @@ export default function ProdutosPage() {
       price: '',
       promotional_price: '',
       category: '',
+      category_id: '',
       tagsInput: '',
       purchase_url: '',
       image_url: '',
@@ -256,6 +368,33 @@ export default function ProdutosPage() {
 
     const { products: parsedProducts, totalRows, skippedRows } = importPreview.result;
 
+    // Categoria que a planilha trouxer e ainda não existir como registro é
+    // criada automaticamente (mesmo comportamento do backfill da migração).
+    const categoryNames = Array.from(
+      new Set(
+        parsedProducts
+          .map((p) => p.category?.trim())
+          .filter((c): c is string => !!c)
+      )
+    );
+
+    if (categoryNames.length > 0) {
+      const { error: upsertError } = await supabase.from('categories').upsert(
+        categoryNames.map((name) => ({ workspace_id: workspaceId, name })),
+        { onConflict: 'workspace_id,name', ignoreDuplicates: true }
+      );
+      if (upsertError) {
+        console.error('Erro ao criar categorias da planilha:', upsertError);
+      }
+    }
+
+    const { data: workspaceCategories } = await supabase
+      .from('categories')
+      .select('id, name')
+      .eq('workspace_id', workspaceId);
+
+    const categoryIdByName = new Map((workspaceCategories || []).map((c) => [c.name, c.id]));
+
     const { data: importRecord, error: importCreateError } = await supabase
       .from('product_imports')
       .insert([
@@ -282,6 +421,7 @@ export default function ProdutosPage() {
       const batch = parsedProducts.slice(i, i + BATCH_SIZE).map((p) => ({
         workspace_id: workspaceId,
         ...p,
+        category_id: p.category ? categoryIdByName.get(p.category.trim()) ?? null : null,
       }));
 
       const { error: batchError, count } = await supabase
@@ -311,7 +451,7 @@ export default function ProdutosPage() {
 
     setImporting(false);
     setImportPreview(null);
-    await loadProducts(workspaceId);
+    await Promise.all([loadProducts(workspaceId), loadCategories(workspaceId)]);
   }
 
   return (
@@ -362,6 +502,17 @@ export default function ProdutosPage() {
               Importar planilha
             </button>
             <button
+              onClick={() => setShowCategoriesPanel(!showCategoriesPanel)}
+              className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium border ${
+                showCategoriesPanel
+                  ? 'bg-primary/10 text-primary border-primary/20'
+                  : 'border-border text-foreground hover:bg-muted'
+              }`}
+            >
+              <FolderOpen className="w-4 h-4" />
+              Categorias
+            </button>
+            <button
               onClick={() => setShowForm(!showForm)}
               className="gradient-brand flex items-center gap-2 px-6 py-2 text-white rounded-lg font-medium shadow-sm transition-all duration-200 hover:shadow-md hover:opacity-95"
             >
@@ -374,6 +525,107 @@ export default function ProdutosPage() {
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
             {error}
+          </div>
+        )}
+
+        {showCategoriesPanel && (
+          <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <FolderOpen className="w-5 h-5 text-primary" />
+                <h2 className="text-lg font-semibold text-foreground">Categorias</h2>
+                <span className="text-xs text-muted-foreground">
+                  {categories.length === 0 ? 'nenhuma cadastrada' : `${categories.length} cadastrada${categories.length > 1 ? 's' : ''}`}
+                </span>
+              </div>
+              <button
+                onClick={() => setShowCategoriesPanel(false)}
+                className="p-1 text-muted-foreground hover:text-foreground"
+              >
+                <ChevronDown className="w-5 h-5 rotate-180" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCategory} className="flex gap-2 mb-4">
+              <input
+                type="text"
+                value={newCategoryName}
+                onChange={(e) => setNewCategoryName(e.target.value)}
+                placeholder="Nome da nova categoria"
+                className="flex-1 px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+              />
+              <button type="submit" className="px-5 py-2 btn-gradient font-medium whitespace-nowrap">
+                Adicionar
+              </button>
+            </form>
+
+            {categoryError && <p className="text-sm text-red-600 mb-3">{categoryError}</p>}
+
+            {categories.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Nenhuma categoria cadastrada ainda. Crie uma acima ou importe uma planilha com a
+                coluna de categoria preenchida.
+              </p>
+            ) : (
+              <div className="space-y-2">
+                {categories.map((cat) => {
+                  const productCount = products.filter((p) => p.category_id === cat.id).length;
+                  return (
+                    <div
+                      key={cat.id}
+                      className="flex items-center gap-2 p-2.5 border border-border rounded-xl"
+                    >
+                      {editingCategoryId === cat.id ? (
+                        <>
+                          <input
+                            type="text"
+                            value={editingCategoryName}
+                            onChange={(e) => setEditingCategoryName(e.target.value)}
+                            autoFocus
+                            className="flex-1 px-3 py-1.5 border border-border rounded-lg bg-white text-sm text-foreground"
+                          />
+                          <button
+                            onClick={() => handleRenameCategory(cat.id)}
+                            title="Salvar"
+                            className="p-1.5 text-primary hover:bg-primary/10 rounded-lg"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingCategoryId(null)}
+                            title="Cancelar"
+                            className="p-1.5 text-muted-foreground hover:text-foreground"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <span className="flex-1 text-sm text-foreground">{cat.name}</span>
+                          <span className="text-xs text-muted-foreground">
+                            {productCount} produto{productCount !== 1 ? 's' : ''}
+                          </span>
+                          <button
+                            onClick={() => startEditingCategory(cat)}
+                            title="Renomear"
+                            className="p-1.5 text-muted-foreground hover:text-foreground hover:bg-muted rounded-lg"
+                          >
+                            <Pencil className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                            title="Excluir"
+                            className="p-1.5 text-destructive hover:bg-destructive/10 rounded-lg"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
@@ -635,13 +887,22 @@ export default function ProdutosPage() {
                   <label className="block text-sm font-medium text-foreground mb-2">
                     Categoria
                   </label>
-                  <input
-                    type="text"
-                    value={formData.category}
-                    onChange={(e) => setFormData({ ...formData, category: e.target.value })}
+                  <select
+                    value={formData.category_id}
+                    onChange={(e) => {
+                      const id = e.target.value;
+                      const cat = categories.find((c) => c.id === id);
+                      setFormData({ ...formData, category_id: id, category: cat ? cat.name : '' });
+                    }}
                     className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
-                    placeholder="Categoria"
-                  />
+                  >
+                    <option value="">Nenhuma categoria</option>
+                    {categories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>
@@ -1108,10 +1369,12 @@ export default function ProdutosPage() {
         <ProductDetailModal
           product={detailProduct}
           workspaceId={workspaceId}
+          categories={categories}
           onClose={() => setDetailProduct(null)}
           onSaved={() => {
             setDetailProduct(null);
             loadProducts(workspaceId);
+            loadCategories(workspaceId);
           }}
         />
       )}

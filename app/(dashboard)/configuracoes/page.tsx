@@ -24,6 +24,9 @@ import {
   AlertTriangle,
   Users,
   Pencil,
+  Timer,
+  ToggleLeft,
+  ToggleRight,
 } from 'lucide-react';
 
 type Section = 'membros' | 'whatsapp' | 'ia';
@@ -100,6 +103,15 @@ export default function ConfiguracoesPage() {
   const [editPassword, setEditPassword] = useState('');
   const [savingMember, setSavingMember] = useState(false);
   const [memberError, setMemberError] = useState('');
+
+  const [editingConnection, setEditingConnection] = useState<WhatsAppConnection | null>(null);
+  const [editMinDelay, setEditMinDelay] = useState(3);
+  const [editMaxDelay, setEditMaxDelay] = useState(8);
+  const [editDailyLimit, setEditDailyLimit] = useState<number | ''>('');
+  const [editNoLimit, setEditNoLimit] = useState(true);
+  const [editWarmupMode, setEditWarmupMode] = useState(true);
+  const [savingConnection, setSavingConnection] = useState(false);
+  const [connectionError, setConnectionError] = useState('');
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get('section') as Section | null;
@@ -320,6 +332,44 @@ export default function ConfiguracoesPage() {
     } finally {
       setConnecting(false);
     }
+  }
+
+  function openEditConnection(conn: WhatsAppConnection) {
+    setEditingConnection(conn);
+    setEditMinDelay(conn.min_delay_seconds);
+    setEditMaxDelay(conn.max_delay_seconds);
+    setEditDailyLimit(conn.daily_message_limit ?? '');
+    setEditNoLimit(!conn.daily_message_limit);
+    setEditWarmupMode(conn.warmup_mode);
+    setConnectionError('');
+  }
+
+  async function handleSaveConnection(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingConnection || !workspaceId) return;
+
+    setSavingConnection(true);
+    setConnectionError('');
+
+    const { error: updateError } = await supabase
+      .from('whatsapp_connections')
+      .update({
+        min_delay_seconds: editMinDelay,
+        max_delay_seconds: editMaxDelay,
+        daily_message_limit: editNoLimit ? null : editDailyLimit || null,
+        warmup_mode: editWarmupMode,
+      })
+      .eq('id', editingConnection.id);
+
+    if (updateError) {
+      setConnectionError('Erro ao salvar: ' + updateError.message);
+      setSavingConnection(false);
+      return;
+    }
+
+    setEditingConnection(null);
+    setSavingConnection(false);
+    await loadConnections(workspaceId);
   }
 
   async function handleDeleteConnection(id: string) {
@@ -709,16 +759,138 @@ export default function ConfiguracoesPage() {
                       />
                     ) : null}
                   </div>
-                  <button
-                    onClick={() => handleDeleteConnection(conn.id)}
-                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => openEditConnection(conn)}
+                      className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg"
+                      title="Editar proteções anti-ban"
+                    >
+                      <Pencil className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => handleDeleteConnection(conn.id)}
+                      className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))
             )}
           </div>
+
+          {editingConnection && createPortal(
+            <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-backdrop-in">
+              <div className="bg-card rounded-2xl shadow-lg w-full max-w-md p-6 animate-modal-in">
+                <div className="flex items-center gap-2 mb-4">
+                  <Timer className="w-4 h-4 text-primary" />
+                  <h3 className="text-lg font-semibold text-foreground">
+                    Proteções anti-ban — {editingConnection.instance_name}
+                  </h3>
+                </div>
+
+                {connectionError && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                    {connectionError}
+                  </div>
+                )}
+
+                <form onSubmit={handleSaveConnection} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Delay entre mensagens: de {editMinDelay} a {editMaxDelay} segundos
+                    </label>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="number"
+                        min={1}
+                        value={editMinDelay}
+                        onChange={(e) => setEditMinDelay(Number(e.target.value))}
+                        className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                      />
+                      <span className="text-muted-foreground text-sm flex-shrink-0">a</span>
+                      <input
+                        type="number"
+                        min={1}
+                        value={editMaxDelay}
+                        onChange={(e) => setEditMaxDelay(Number(e.target.value))}
+                        className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">
+                      Limite diário de mensagens
+                    </label>
+                    <input
+                      type="number"
+                      min={1}
+                      disabled={editNoLimit}
+                      value={editDailyLimit}
+                      onChange={(e) =>
+                        setEditDailyLimit(e.target.value === '' ? '' : Number(e.target.value))
+                      }
+                      className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground mb-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                      placeholder="ex: 200"
+                    />
+                    <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <input
+                        type="checkbox"
+                        checked={editNoLimit}
+                        onChange={(e) => setEditNoLimit(e.target.checked)}
+                        className="rounded border-border"
+                      />
+                      Sem limite
+                    </label>
+                  </div>
+
+                  <div className="flex items-start justify-between gap-4 p-3 bg-muted rounded-xl">
+                    <div>
+                      <p className="text-sm font-medium text-foreground">Modo aquecimento</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Reduz o volume de envio nos primeiros dias para evitar banimento do número.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setEditWarmupMode(!editWarmupMode)}
+                      className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium transition-all duration-200 flex-shrink-0 ${
+                        editWarmupMode
+                          ? 'gradient-brand text-white shadow-sm'
+                          : 'bg-white text-muted-foreground border border-border'
+                      }`}
+                    >
+                      {editWarmupMode ? (
+                        <ToggleRight className="w-4 h-4" />
+                      ) : (
+                        <ToggleLeft className="w-4 h-4" />
+                      )}
+                      {editWarmupMode ? 'Ativado' : 'Desativado'}
+                    </button>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      type="submit"
+                      disabled={savingConnection}
+                      className="btn-gradient font-medium px-6 py-2 disabled:opacity-50"
+                    >
+                      {savingConnection ? 'Salvando...' : 'Salvar'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingConnection(null)}
+                      className="px-6 py-2 border border-border text-foreground rounded-full font-medium hover:bg-background"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>,
+            document.body
+          )}
         </div>
         )}
 

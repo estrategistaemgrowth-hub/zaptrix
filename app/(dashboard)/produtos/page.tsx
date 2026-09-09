@@ -5,9 +5,10 @@ import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { fetchAllRows } from '@/lib/fetch-all-rows';
 import { readFileAsText, parseProductsCsv, ImportResult } from '@/lib/csv-import';
+import { downloadCsv } from '@/lib/csv-export';
 import { ProductDetailModal } from '@/components/product-detail-modal';
 import { SkeletonCard, Skeleton } from '@/components/skeleton';
-import { Plus, Trash2, Tag, Upload, FileSpreadsheet, X, Loader2, Search, SlidersHorizontal, ExternalLink, LayoutGrid, List, PackageSearch, FolderOpen, ChevronDown, Pencil, Check } from 'lucide-react';
+import { Plus, Trash2, Tag, Upload, Download, FileSpreadsheet, X, Loader2, Search, SlidersHorizontal, ExternalLink, LayoutGrid, List, PackageSearch, FolderOpen, ChevronDown, Pencil, Check } from 'lucide-react';
 
 interface Product {
   id: string;
@@ -115,6 +116,23 @@ export default function ProdutosPage() {
 
   function toggleTagFilter(tag: string) {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
+  }
+
+  function handleExportCsv() {
+    downloadCsv(
+      `produtos-${new Date().toISOString().slice(0, 10)}.csv`,
+      filteredProducts.map((p) => ({
+        nome: p.name,
+        sku: p.sku || '',
+        categoria: p.category_id ? categoryNameById.get(p.category_id) ?? p.category ?? '' : p.category || '',
+        preco: p.price.toFixed(2),
+        preco_promocional: p.promotional_price !== null ? p.promotional_price.toFixed(2) : '',
+        estoque: p.stock_quantity !== null ? p.stock_quantity : '',
+        tags: (p.tags || []).join(', '),
+        link_compra: p.purchase_url || '',
+        ativo: p.active ? 'sim' : 'não',
+      }))
+    );
   }
 
   function clearFilters() {
@@ -499,6 +517,15 @@ export default function ProdutosPage() {
                 <List className="w-4 h-4" />
               </button>
             </div>
+            <button
+              onClick={handleExportCsv}
+              disabled={filteredProducts.length === 0}
+              title="Exportar produtos filtrados para CSV"
+              className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg font-medium text-sm hover:bg-muted disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              Exportar
+            </button>
             {canManageProducts && (
               <>
                 <input

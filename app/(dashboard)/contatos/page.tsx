@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { fetchAllRows } from '@/lib/fetch-all-rows';
-import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal } from 'lucide-react';
+import { downloadCsv } from '@/lib/csv-export';
+import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal, Download } from 'lucide-react';
 
 const PAGE_SIZE = 200;
 
@@ -75,6 +76,20 @@ export default function ContatosPage() {
   function toggleTagFilter(tag: string) {
     setSelectedTags((prev) =>
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
+    );
+  }
+
+  function handleExportCsv() {
+    downloadCsv(
+      `contatos-${new Date().toISOString().slice(0, 10)}.csv`,
+      filteredContacts.map((c) => ({
+        nome: c.name || c.push_name || '',
+        telefone: c.phone,
+        tags: (c.tags || []).join(', '),
+        observacoes: c.notes || '',
+        ultimo_contato: c.last_contact_at ? new Date(c.last_contact_at).toLocaleDateString('pt-BR') : '',
+        criado_em: new Date(c.created_at).toLocaleDateString('pt-BR'),
+      }))
     );
   }
 
@@ -175,13 +190,24 @@ export default function ContatosPage() {
               <p className="text-muted-foreground">{filteredContacts.length} contatos</p>
             </div>
           </div>
-          <button
-            onClick={() => setShowForm(!showForm)}
-            className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
-          >
-            <Plus className="w-4 h-4" />
-            Novo contato
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleExportCsv}
+              disabled={filteredContacts.length === 0}
+              title="Exportar contatos filtrados para CSV"
+              className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-xl font-medium text-sm hover:bg-muted disabled:opacity-50"
+            >
+              <Download className="w-4 h-4" />
+              Exportar CSV
+            </button>
+            <button
+              onClick={() => setShowForm(!showForm)}
+              className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+            >
+              <Plus className="w-4 h-4" />
+              Novo contato
+            </button>
+          </div>
         </div>
 
         {error && (

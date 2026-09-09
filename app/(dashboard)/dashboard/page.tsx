@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { MessageCircle, Users, MessageSquare, TrendingUp, Zap, Check, Package, Clock, AlertTriangle } from 'lucide-react';
@@ -83,11 +84,11 @@ const cards = [
   },
 ];
 
-const steps: { n: number; key: keyof OnboardingStatus; title: string; desc: string }[] = [
-  { n: 1, key: 'whatsapp', title: 'WhatsApp', desc: 'Conectar Evolution API' },
-  { n: 2, key: 'produtos', title: 'Produtos', desc: 'Cadastrar seu catálogo' },
-  { n: 3, key: 'conhecimento', title: 'Conhecimento', desc: 'Treinar a IA com docs' },
-  { n: 4, key: 'atender', title: 'Atender', desc: 'Receber mensagens ao vivo' },
+const steps: { n: number; key: keyof OnboardingStatus; title: string; desc: string; href: string }[] = [
+  { n: 1, key: 'whatsapp', title: 'WhatsApp', desc: 'Conectar Evolution API', href: '/configuracoes?section=whatsapp' },
+  { n: 2, key: 'produtos', title: 'Produtos', desc: 'Cadastrar seu catálogo', href: '/produtos' },
+  { n: 3, key: 'conhecimento', title: 'Conhecimento', desc: 'Treinar a IA com docs', href: '/conhecimento' },
+  { n: 4, key: 'atender', title: 'Atender', desc: 'Receber mensagens ao vivo', href: '/atendimento' },
 ];
 
 export default function DashboardPage() {
@@ -428,10 +429,11 @@ export default function DashboardPage() {
             {steps.map((step) => {
               const done = onboarding[step.key];
               return (
-                <div
+                <Link
                   key={step.n}
-                  className={`p-4 rounded-xl transition-all duration-200 hover:shadow-sm ${
-                    done ? 'bg-primary/5 border border-primary/20' : 'bg-muted'
+                  href={step.href}
+                  className={`block p-4 rounded-xl transition-all duration-200 hover:shadow-sm cursor-pointer ${
+                    done ? 'bg-primary/5 border border-primary/20' : 'bg-muted hover:bg-muted/70'
                   }`}
                 >
                   <div className="flex items-center gap-3 mb-2">
@@ -445,7 +447,7 @@ export default function DashboardPage() {
                     <h3 className="font-semibold text-foreground">{step.title}</h3>
                   </div>
                   <p className="text-sm text-muted-foreground">{done ? 'Concluído' : step.desc}</p>
-                </div>
+                </Link>
               );
             })}
           </div>

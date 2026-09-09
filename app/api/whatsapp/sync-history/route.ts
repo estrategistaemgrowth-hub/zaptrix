@@ -188,8 +188,12 @@ export async function POST(request: NextRequest) {
             .upload(path, buffer, { contentType: mimeType, upsert: false });
 
           if (!uploadError) {
-            const { data: publicUrlData } = admin.storage.from('message-media').getPublicUrl(path);
-            mediaUrl = publicUrlData.publicUrl;
+            // Bucket privado — signed URL de validade longa (ver nota em
+            // app/api/webhooks/whatsapp/route.ts).
+            const { data: signedUrlData } = await admin.storage
+              .from('message-media')
+              .createSignedUrl(path, 60 * 60 * 24 * 365);
+            mediaUrl = signedUrlData?.signedUrl || null;
           } else {
             console.error('Erro ao salvar mídia histórica no storage:', uploadError);
           }

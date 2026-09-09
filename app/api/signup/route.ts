@@ -1,14 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
 import { isAsaasConfigured, createAsaasCustomer, createAsaasPayment, getAsaasPixQrCode } from '@/lib/asaas';
+import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
 /**
  * Cadastro público de lojista — usado pelo link de assinatura ("/assinar")
  * e pelo link de teste grátis ("/assinar?trial=1"). Sem autenticação prévia
  * (é o próprio visitante criando a conta), então usa sempre o service role
  * (createAdminClient), nunca signUp client-side.
+ *
+ * Rota totalmente anônima que cria usuário + workspace + (se pago) cobrança
+ * real no Asaas — por isso tem rate limit por IP (5/hora), pra um script não
+ * conseguir gerar cadastros/cobranças em massa.
  */
 export async function POST(request: NextRequest) {
+  const allowed = await checkRateLimit({
+    bucket: 'signup',
+    identifier: getClientIp(request),
+    maxHits: 5,
+    windowSeconds: 3600,
+  });
+
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Muitas tentativas de cadastro. Tente novamente em alguns minutos.' },
+      { status: 429 }
+    );
+  }
+
   const { storeName, email, password, cpfCnpj, planId, isTrial } = await request.json();
 
   if (!storeName || !email || !password) {

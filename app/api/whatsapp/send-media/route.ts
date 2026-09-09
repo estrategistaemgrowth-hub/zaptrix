@@ -90,8 +90,13 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Não foi possível salvar o arquivo.' }, { status: 500 });
   }
 
-  const { data: publicUrlData } = admin.storage.from('message-media').getPublicUrl(path);
-  const mediaUrl = publicUrlData.publicUrl;
+  // Bucket privado — signed URL de validade longa (ver nota em
+  // app/api/webhooks/whatsapp/route.ts). O envio pro WhatsApp usa o base64
+  // direto (sendMediaMessage), então essa URL só serve pra reexibir no painel.
+  const { data: signedUrlData } = await admin.storage
+    .from('message-media')
+    .createSignedUrl(path, 60 * 60 * 24 * 365);
+  const mediaUrl = signedUrlData?.signedUrl || null;
 
   const { data: connection } = await supabase
     .from('whatsapp_connections')

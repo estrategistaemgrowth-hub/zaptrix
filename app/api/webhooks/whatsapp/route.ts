@@ -5,6 +5,7 @@ import { decryptSecret } from '@/lib/security/encrypt';
 import { callLlm, ChatMessage } from '@/lib/llm-client';
 import { AiProvider } from '@/lib/ai-models';
 import { transcribeAudio } from '@/lib/transcription';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 interface BusinessHoursDay {
   enabled: boolean;
@@ -616,6 +617,22 @@ async function tryAutoReply({
 
     if (!profile || !profile.enabled) return;
 
+    // Cada resposta automática dispara pelo menos uma chamada paga ao LLM
+    // (mais as extras de memória/estágio/handoff) — limite por workspace
+    // evita custo descontrolado em caso de loop de mensagens ou abuso.
+    // Generoso o bastante pra não afetar uso legítimo (300/hora).
+    const aiRateLimitOk = await checkRateLimit({
+      bucket: 'ai-auto-reply',
+      identifier: workspaceId,
+      maxHits: 300,
+      windowSeconds: 3600,
+    });
+
+    if (!aiRateLimitOk) {
+      console.warn(`Limite de respostas automáticas de IA por hora atingido — workspace ${workspaceId}`);
+      return;
+    }
+
     if (profile.business_hours_enabled && !isWithinBusinessHours(profile.business_hours)) {
       if (profile.out_of_hours_message) {
         const sendResult = await sendTextMessage(instanceName, phone, profile.out_of_hours_message);
@@ -1038,8 +1055,13 @@ export async function POST(request: NextRequest) {
               .upload(path, buffer, { contentType: mimeType, upsert: false });
 
             if (!uploadError) {
-              const { data: publicUrlData } = admin.storage.from('message-media').getPublicUrl(path);
-              mediaUrl = publicUrlData.publicUrl;
+              // Bucket privado — leitura só via signed URL (validade longa,
+              // 1 ano, pra funcionar como o antigo link público sem expor
+              // o path a acesso anônimo/enumeração).
+              const { data: signedUrlData } = await admin.storage
+                .from('message-media')
+                .createSignedUrl(path, 60 * 60 * 24 * 365);
+              mediaUrl = signedUrlData?.signedUrl || null;
 
               if (media.mediaType === 'audio') {
                 transcript = await transcribeAudio(downloaded.base64, mimeType, workspaceId, admin);

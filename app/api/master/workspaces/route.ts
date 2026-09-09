@@ -46,7 +46,8 @@ export async function GET() {
     .order('created_at', { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error('Erro ao listar workspaces (master):', error);
+    return NextResponse.json({ error: 'Erro ao buscar lojas' }, { status: 400 });
   }
 
   const enriched = await Promise.all(
@@ -187,7 +188,8 @@ export async function PATCH(request: NextRequest) {
   const { error } = await admin.from('workspaces').update(updates).eq('id', workspaceId);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error('Erro ao atualizar workspace (master):', error);
+    return NextResponse.json({ error: 'Erro ao atualizar loja' }, { status: 400 });
   }
 
   return NextResponse.json({ status: 'ok' });

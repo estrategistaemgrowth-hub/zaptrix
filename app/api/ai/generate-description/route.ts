@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { decryptSecret } from '@/lib/security/encrypt';
+import { checkRateLimit } from '@/lib/rate-limit';
 
 const SYSTEM_PROMPT =
   'Você é um copywriter de e-commerce. Escreva descrições de produto persuasivas, claras e ' +
@@ -116,6 +117,22 @@ export async function POST(request: NextRequest) {
 
   if (!membership) {
     return NextResponse.json({ error: 'Workspace não encontrado' }, { status: 404 });
+  }
+
+  // Cada chamada custa uma requisição paga ao provedor de IA — limite por
+  // workspace evita custo descontrolado por uso repetitivo/automatizado.
+  const allowed = await checkRateLimit({
+    bucket: 'ai-generate-description',
+    identifier: membership.workspace_id,
+    maxHits: 30,
+    windowSeconds: 3600,
+  });
+
+  if (!allowed) {
+    return NextResponse.json(
+      { error: 'Limite de gerações de descrição por hora atingido. Tente novamente mais tarde.' },
+      { status: 429 }
+    );
   }
 
   const { data: credential } = await supabase

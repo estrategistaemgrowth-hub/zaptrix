@@ -54,7 +54,8 @@ export async function GET(request: NextRequest) {
     .order('due_date', { ascending: false });
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error('Erro ao listar faturas (master):', error);
+    return NextResponse.json({ error: 'Erro ao buscar faturas' }, { status: 400 });
   }
 
   // file_url guarda o PATH dentro do bucket privado, não a URL final — a
@@ -251,7 +252,8 @@ export async function PATCH(request: NextRequest) {
   const { error } = await admin.from('invoices').update({ status }).eq('id', invoiceId);
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
+    console.error('Erro ao atualizar fatura (master):', error);
+    return NextResponse.json({ error: 'Erro ao atualizar fatura' }, { status: 400 });
   }
 
   return NextResponse.json({ status: 'ok' });

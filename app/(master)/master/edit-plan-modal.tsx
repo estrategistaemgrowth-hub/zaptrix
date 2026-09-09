@@ -17,6 +17,7 @@ interface WorkspaceLite {
   name: string;
   plan_id: string | null;
   subscription_expires_at: string | null;
+  is_complimentary: boolean;
 }
 
 interface Props {
@@ -38,6 +39,7 @@ export function EditPlanModal({ workspace, plans, onClose, onSaved }: Props) {
   const [expiresAt, setExpiresAt] = useState(
     workspace.subscription_expires_at ? workspace.subscription_expires_at.slice(0, 10) : ''
   );
+  const [isComplimentary, setIsComplimentary] = useState(workspace.is_complimentary);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -57,6 +59,7 @@ export function EditPlanModal({ workspace, plans, onClose, onSaved }: Props) {
           workspaceId: workspace.id,
           planId: planId || null,
           expiresAt: expiresAt || null,
+          isComplimentary,
         }),
       });
 
@@ -121,6 +124,15 @@ export function EditPlanModal({ workspace, plans, onClose, onSaved }: Props) {
               className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
             />
           </div>
+
+          <label className="flex items-center gap-2 text-sm text-foreground">
+            <input
+              type="checkbox"
+              checked={isComplimentary}
+              onChange={(e) => setIsComplimentary(e.target.checked)}
+            />
+            Acesso privilegiado (cortesia/parceria — nunca bloqueia por vencimento)
+          </label>
         </div>
 
         <div className="flex gap-3 p-6 border-t border-border">

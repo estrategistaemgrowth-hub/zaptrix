@@ -2,7 +2,17 @@
 
 import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
-import { Ban, Edit2, FileText, Lock, Plus, Unlock } from 'lucide-react';
+import {
+  Ban,
+  Edit2,
+  FileText,
+  Lock,
+  MessageCircle,
+  Package,
+  Plus,
+  Smartphone,
+  Unlock,
+} from 'lucide-react';
 import { StatusBadge } from '@/components/status-badge';
 import { QuotaBar } from '@/components/quota-bar';
 import { SkeletonRow } from '@/components/skeleton';
@@ -29,11 +39,25 @@ interface Workspace {
   plan_id: string | null;
   subscription_status: 'trial' | 'active' | 'overdue' | 'canceled';
   subscription_expires_at: string | null;
+  is_complimentary: boolean;
   created_at: string;
   plan: Plan | null;
   ownerEmail: string | null;
   productCount: number;
   memberCount: number;
+  whatsappConnected: boolean;
+  messages7d: number;
+}
+
+interface Summary {
+  totalWorkspaces: number;
+  whatsappConnectedCount: number;
+  withProductsCount: number;
+  trialCount: number;
+  complimentaryCount: number;
+  blockedCount: number;
+  expiredSubscriptionCount: number;
+  overdueInvoiceCount: number;
 }
 
 const EMPTY_FORM = {
@@ -44,6 +68,9 @@ const EMPTY_FORM = {
   password: '',
   planId: '',
   expiresAt: '',
+  cpfCnpj: '',
+  isComplimentary: false,
+  generateAsaasCharge: false,
 };
 
 const STATUS_LABEL: Record<Workspace['status'], string> = {
@@ -67,12 +94,20 @@ function expiryClassName(expiresAt: string | null): string {
 
 export default function MasterAdminPage() {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [summary, setSummary] = useState<Summary | null>(null);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [showNewForm, setShowNewForm] = useState(false);
   const [formData, setFormData] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [createdInfo, setCreatedInfo] = useState<{
+    email: string;
+    password: string;
+    asaasWarning?: string | null;
+    pixQrCode?: string | null;
+    paymentUrl?: string | null;
+  } | null>(null);
   const [editingWorkspace, setEditingWorkspace] = useState<Workspace | null>(null);
   const [invoicesWorkspace, setInvoicesWorkspace] = useState<Workspace | null>(null);
   const supabase = createClient();
@@ -89,6 +124,7 @@ export default function MasterAdminPage() {
       const result = await res.json();
       if (res.ok) {
         setWorkspaces(result.workspaces || []);
+        setSummary(result.summary || null);
       }
     } catch (err) {
       console.error('Erro ao carregar lojistas:', err);
@@ -119,6 +155,9 @@ export default function MasterAdminPage() {
           password: formData.password,
           planId: formData.planId,
           expiresAt: formData.expiresAt,
+          isComplimentary: formData.isComplimentary,
+          cpfCnpj: formData.cpfCnpj || undefined,
+          generateAsaasCharge: formData.generateAsaasCharge,
         }),
       });
 
@@ -129,6 +168,13 @@ export default function MasterAdminPage() {
         return;
       }
 
+      setCreatedInfo({
+        email: result.email,
+        password: result.password,
+        asaasWarning: result.asaasWarning,
+        pixQrCode: result.invoice?.asaas_pix_qrcode || null,
+        paymentUrl: result.invoice?.asaas_invoice_url || null,
+      });
       setFormData(EMPTY_FORM);
       setShowNewForm(false);
       loadWorkspaces();
@@ -181,7 +227,97 @@ export default function MasterAdminPage() {
           </button>
         </div>
 
+        {summary && (
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground">Lojistas</p>
+              <p className="text-2xl font-bold text-foreground">{summary.totalWorkspaces}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Smartphone className="w-3 h-3" /> WhatsApp conectado
+              </p>
+              <p className="text-2xl font-bold text-foreground">{summary.whatsappConnectedCount}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <Package className="w-3 h-3" /> Com produtos cadastrados
+              </p>
+              <p className="text-2xl font-bold text-foreground">{summary.withProductsCount}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground">Em teste grátis</p>
+              <p className="text-2xl font-bold text-foreground">{summary.trialCount}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground">Acesso privilegiado (cortesia)</p>
+              <p className="text-2xl font-bold text-foreground">{summary.complimentaryCount}</p>
+            </div>
+            <div className="bg-card border border-border rounded-2xl p-4">
+              <p className="text-xs text-muted-foreground">Suspensos/bloqueados</p>
+              <p className="text-2xl font-bold text-foreground">{summary.blockedCount}</p>
+            </div>
+            <div className="bg-card border border-amber-200 bg-amber-50 rounded-2xl p-4">
+              <p className="text-xs text-amber-700">Assinatura vencida</p>
+              <p className="text-2xl font-bold text-amber-700">{summary.expiredSubscriptionCount}</p>
+            </div>
+            <div className="bg-card border border-red-200 bg-red-50 rounded-2xl p-4">
+              <p className="text-xs text-red-700">Faturas em atraso</p>
+              <p className="text-2xl font-bold text-red-700">{summary.overdueInvoiceCount}</p>
+            </div>
+          </div>
+        )}
+
         <SignupLinksCard />
+
+        {createdInfo && (
+          <div className="bg-card border border-border rounded-2xl p-6 mb-8">
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <p className="text-sm font-semibold text-foreground">Lojista criado com sucesso</p>
+                <p className="text-sm text-muted-foreground">
+                  {createdInfo.email} — senha: <code className="font-mono">{createdInfo.password}</code>
+                </p>
+              </div>
+              <button
+                onClick={() => setCreatedInfo(null)}
+                className="text-sm text-muted-foreground hover:text-foreground"
+              >
+                Fechar
+              </button>
+            </div>
+
+            {createdInfo.asaasWarning && (
+              <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                {createdInfo.asaasWarning}
+              </p>
+            )}
+
+            {createdInfo.pixQrCode && (
+              <div className="flex items-center gap-4 mt-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={`data:image/png;base64,${createdInfo.pixQrCode}`}
+                  alt="QR Code PIX da primeira cobrança"
+                  className="w-32 h-32"
+                />
+                <div>
+                  <p className="text-sm text-foreground">Primeira cobrança gerada no Asaas.</p>
+                  {createdInfo.paymentUrl && (
+                    <a
+                      href={createdInfo.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-sm text-primary hover:underline"
+                    >
+                      Abrir cobrança
+                    </a>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {showNewForm && (
           <div className="bg-card border border-border rounded-2xl p-6 mb-8 animate-fade-in">
@@ -300,6 +436,50 @@ export default function MasterAdminPage() {
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    CPF/CNPJ (necessário pra gerar cobrança no Asaas)
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="Só dígitos"
+                    value={formData.cpfCnpj}
+                    onChange={(e) => setFormData({ ...formData, cpfCnpj: e.target.value })}
+                    disabled={formData.isComplimentary}
+                    className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground disabled:opacity-50"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-2 pt-1">
+                <label className="flex items-center gap-2 text-sm text-foreground">
+                  <input
+                    type="checkbox"
+                    checked={formData.isComplimentary}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        isComplimentary: e.target.checked,
+                        generateAsaasCharge: e.target.checked ? false : formData.generateAsaasCharge,
+                      })
+                    }
+                  />
+                  Acesso privilegiado (cortesia/parceria — nunca bloqueia por vencimento, sem cobrança)
+                </label>
+
+                {!formData.isComplimentary && (
+                  <label className="flex items-center gap-2 text-sm text-foreground">
+                    <input
+                      type="checkbox"
+                      checked={formData.generateAsaasCharge}
+                      onChange={(e) =>
+                        setFormData({ ...formData, generateAsaasCharge: e.target.checked })
+                      }
+                    />
+                    Gerar cobrança PIX no Asaas já na criação (usa o valor do plano e o vencimento acima)
+                  </label>
+                )}
               </div>
 
               <div className="flex gap-3">
@@ -332,13 +512,14 @@ export default function MasterAdminPage() {
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Vencimento</th>
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Status</th>
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Uso</th>
+                  <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Atividade</th>
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-2 py-2">
+                    <td colSpan={7} className="px-2 py-2">
                       <div className="space-y-1">
                         <SkeletonRow />
                         <SkeletonRow />
@@ -348,7 +529,7 @@ export default function MasterAdminPage() {
                   </tr>
                 ) : workspaces.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-8 text-center text-muted-foreground">
+                    <td colSpan={7} className="px-6 py-8 text-center text-muted-foreground">
                       Nenhum lojista cadastrado ainda
                     </td>
                   </tr>
@@ -371,11 +552,16 @@ export default function MasterAdminPage() {
                           : '—'}
                       </td>
                       <td className="px-6 py-4">
-                        <StatusBadge
-                          label={STATUS_LABEL[ws.status]}
-                          active={ws.status === 'active'}
-                          tone={ws.status === 'blocked' ? 'destructive' : 'warning'}
-                        />
+                        <div className="flex flex-wrap gap-1">
+                          <StatusBadge
+                            label={STATUS_LABEL[ws.status]}
+                            active={ws.status === 'active'}
+                            tone={ws.status === 'blocked' ? 'destructive' : 'warning'}
+                          />
+                          {ws.is_complimentary && (
+                            <StatusBadge label="Cortesia" active tone="warning" />
+                          )}
+                        </div>
                         {ws.status === 'blocked' && ws.status_reason && (
                           <p className="text-xs text-muted-foreground mt-1">{ws.status_reason}</p>
                         )}
@@ -391,6 +577,20 @@ export default function MasterAdminPage() {
                           current={ws.memberCount}
                           max={ws.plan?.member_limit ?? null}
                         />
+                      </td>
+                      <td className="px-6 py-4">
+                        <p
+                          className={`flex items-center gap-1.5 text-xs ${
+                            ws.whatsappConnected ? 'text-success' : 'text-muted-foreground'
+                          }`}
+                        >
+                          <Smartphone className="w-3.5 h-3.5" />
+                          {ws.whatsappConnected ? 'WhatsApp conectado' : 'Não conectado'}
+                        </p>
+                        <p className="flex items-center gap-1.5 text-xs text-muted-foreground mt-1">
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          {ws.messages7d} msgs (7d)
+                        </p>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex gap-1">

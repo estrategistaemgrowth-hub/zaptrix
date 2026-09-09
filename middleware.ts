@@ -94,7 +94,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: workspace } = await supabase
     .from('workspaces')
-    .select('status, subscription_expires_at')
+    .select('status, subscription_expires_at, is_complimentary')
     .eq('id', membership.workspace_id)
     .maybeSingle();
 
@@ -105,8 +105,14 @@ export async function middleware(request: NextRequest) {
   // Assinatura vencida (teste grátis acabou, ou pagamento não confirmado/
   // lapsou) bloqueia o acesso até o pagamento cair — workspaces sem data de
   // vencimento definida (ex: criados manualmente sem plano) nunca bloqueiam
-  // por esta regra.
-  if (workspace.subscription_expires_at && new Date(workspace.subscription_expires_at) < new Date()) {
+  // por esta regra. Acesso privilegiado (cortesia/parceria) nunca é bloqueado
+  // por vencimento, mesmo com data no passado — só o status manual acima
+  // ainda pode suspendê-lo.
+  if (
+    !workspace.is_complimentary &&
+    workspace.subscription_expires_at &&
+    new Date(workspace.subscription_expires_at) < new Date()
+  ) {
     return NextResponse.redirect(new URL('/assinatura-vencida', request.url));
   }
 

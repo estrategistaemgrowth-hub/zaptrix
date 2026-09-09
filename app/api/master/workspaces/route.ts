@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
 import { createAdminClient } from '@/lib/supabase/admin';
+import { generateInvoiceWithAsaasCharge } from '@/lib/generate-invoice';
 
 /**
  * Confere que quem chama é super admin da plataforma. A API nunca confia só
@@ -50,15 +51,36 @@ export async function GET() {
     return NextResponse.json({ error: 'Erro ao buscar lojas' }, { status: 400 });
   }
 
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+
   const enriched = await Promise.all(
     (workspaces || []).map(async (ws) => {
-      const [{ data: ownerData }, { count: productCount }, { count: memberCount }] = await Promise.all([
+      const [
+        { data: ownerData },
+        { count: productCount },
+        { count: memberCount },
+        { count: connectedCount },
+        { count: messages7d },
+      ] = await Promise.all([
         admin.auth.admin.getUserById(ws.owner_user_id),
         admin.from('products').select('id', { count: 'exact', head: true }).eq('workspace_id', ws.id),
         admin
           .from('workspace_members')
           .select('id', { count: 'exact', head: true })
           .eq('workspace_id', ws.id),
+        admin
+          .from('whatsapp_connections')
+          .select('id', { count: 'exact', head: true })
+          .eq('workspace_id', ws.id)
+          .eq('status', 'connected'),
+        // Proxy de "quanto o lojista usa o sistema": volume de mensagens
+        // (enviadas/recebidas) nos últimos 7 dias — mais fiel ao uso real de
+        // um produto de atendimento via WhatsApp do que login no painel.
+        admin
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('workspace_id', ws.id)
+          .gte('created_at', sevenDaysAgo),
       ]);
 
       return {
@@ -66,15 +88,55 @@ export async function GET() {
         ownerEmail: ownerData.user?.email || null,
         productCount: productCount || 0,
         memberCount: memberCount || 0,
+        whatsappConnected: (connectedCount || 0) > 0,
+        messages7d: messages7d || 0,
       };
     })
   );
 
-  return NextResponse.json({ workspaces: enriched });
+  const today = new Date().toISOString().slice(0, 10);
+  const { data: openInvoices } = await admin
+    .from('invoices')
+    .select('id, status, due_date')
+    .in('status', ['pending', 'overdue']);
+
+  const overdueInvoiceCount = (openInvoices || []).filter(
+    (inv) => inv.status === 'overdue' || inv.due_date < today
+  ).length;
+
+  const now = new Date();
+  const summary = {
+    totalWorkspaces: enriched.length,
+    whatsappConnectedCount: enriched.filter((w) => w.whatsappConnected).length,
+    withProductsCount: enriched.filter((w) => w.productCount > 0).length,
+    trialCount: enriched.filter((w) => w.subscription_status === 'trial').length,
+    complimentaryCount: enriched.filter((w) => w.is_complimentary).length,
+    blockedCount: enriched.filter((w) => w.status !== 'active').length,
+    expiredSubscriptionCount: enriched.filter(
+      (w) =>
+        !w.is_complimentary &&
+        w.subscription_expires_at &&
+        new Date(w.subscription_expires_at) < now
+    ).length,
+    overdueInvoiceCount,
+  };
+
+  return NextResponse.json({ workspaces: enriched, summary });
 }
 
 export async function POST(request: NextRequest) {
-  const { storeName, siteUrl, segment, email, password, planId, expiresAt } = await request.json();
+  const {
+    storeName,
+    siteUrl,
+    segment,
+    email,
+    password,
+    planId,
+    expiresAt,
+    isComplimentary,
+    cpfCnpj,
+    generateAsaasCharge,
+  } = await request.json();
 
   if (!storeName || !email || !password || !planId || !expiresAt) {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
@@ -122,6 +184,8 @@ export async function POST(request: NextRequest) {
         plan_id: planId,
         subscription_status: 'active',
         subscription_expires_at: expiresAt,
+        is_complimentary: !!isComplimentary,
+        cpf_cnpj: cpfCnpj || null,
       },
     ])
     .select()
@@ -150,11 +214,37 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: memberError.message }, { status: 400 });
   }
 
-  return NextResponse.json({ workspaceId: workspace.id, email, password });
+  // Acesso privilegiado (cortesia) nunca gera cobrança — não faz sentido
+  // cobrar e ao mesmo tempo marcar como isento de cobrança.
+  if (!generateAsaasCharge || isComplimentary) {
+    return NextResponse.json({ workspaceId: workspace.id, email, password });
+  }
+
+  const { data: plan } = await admin
+    .from('plans')
+    .select('name, price_cents')
+    .eq('id', planId)
+    .maybeSingle();
+
+  if (!plan) {
+    return NextResponse.json({ workspaceId: workspace.id, email, password });
+  }
+
+  const { invoice, asaasWarning } = await generateInvoiceWithAsaasCharge({
+    admin,
+    workspaceId: workspace.id,
+    amountCents: plan.price_cents,
+    dueDate: expiresAt,
+    notes: `Assinatura Zaptrix — ${plan.name}`,
+    cpfCnpj,
+    createdBy: user.id,
+  });
+
+  return NextResponse.json({ workspaceId: workspace.id, email, password, invoice, asaasWarning });
 }
 
 export async function PATCH(request: NextRequest) {
-  const { workspaceId, planId, expiresAt, status, statusReason } = await request.json();
+  const { workspaceId, planId, expiresAt, status, statusReason, isComplimentary } = await request.json();
 
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId obrigatório' }, { status: 400 });
@@ -173,6 +263,7 @@ export async function PATCH(request: NextRequest) {
   const updates: Record<string, unknown> = {};
   if (planId !== undefined) updates.plan_id = planId || null;
   if (expiresAt !== undefined) updates.subscription_expires_at = expiresAt || null;
+  if (isComplimentary !== undefined) updates.is_complimentary = !!isComplimentary;
   if (status !== undefined) {
     updates.status = status;
     updates.status_changed_at = new Date().toISOString();

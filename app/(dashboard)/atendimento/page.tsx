@@ -20,10 +20,17 @@ import {
   AlertTriangle,
   Check,
   CheckCheck,
+  RefreshCw,
+  StickyNote,
+  Zap,
+  Image as ImageIcon,
+  Video,
+  Mic,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
+import { QuickRepliesModal, type QuickReply } from '@/components/quick-replies-modal';
 
 interface Conversation {
   id: string;
@@ -121,8 +128,22 @@ interface Message {
   media_caption?: string | null;
   transcript?: string | null;
   wa_status?: WaStatus | null;
+  is_internal_note?: boolean | null;
   created_at: string;
 }
+
+type ComposerMode = 'reply' | 'note';
+
+/** Tipo de anexo escolhido no menu do clipe — controla o `accept` do input de
+ *  arquivo escondido antes de abrir o seletor nativo (Recurso 4). */
+type AttachmentKind = 'image' | 'video' | 'document' | 'audio';
+
+const ATTACHMENT_ACCEPT: Record<AttachmentKind, string> = {
+  image: 'image/*',
+  video: 'video/*',
+  document: '.pdf,.doc,.docx,.xls,.xlsx',
+  audio: 'audio/*',
+};
 
 const MAX_ATTACHMENT_SIZE_BYTES = 16 * 1024 * 1024; // 16MB — limite comum do WhatsApp
 
@@ -155,6 +176,12 @@ export default function AtendimentoPage() {
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<Conversation['status'] | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
+  const [syncingHistory, setSyncingHistory] = useState(false);
+  const [composerMode, setComposerMode] = useState<ComposerMode>('reply');
+  const [showAttachmentMenu, setShowAttachmentMenu] = useState(false);
+  const [quickReplies, setQuickReplies] = useState<QuickReply[]>([]);
+  const [showQuickRepliesPopover, setShowQuickRepliesPopover] = useState(false);
+  const [showQuickRepliesModal, setShowQuickRepliesModal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -212,12 +239,27 @@ export default function AtendimentoPage() {
       }
 
       setWorkspaceId(workspace.workspaceId);
-      await loadConversations(workspace.workspaceId);
+      await Promise.all([loadConversations(workspace.workspaceId), loadQuickReplies(workspace.workspaceId)]);
     } catch (err) {
       console.error('Erro ao carregar atendimento:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadQuickReplies(wsId: string) {
+    const { data, error: loadError } = await supabase
+      .from('quick_replies')
+      .select('id, shortcut, title, content')
+      .eq('workspace_id', wsId)
+      .order('title', { ascending: true });
+
+    if (loadError) {
+      console.error('Erro ao carregar respostas rápidas:', loadError);
+      return;
+    }
+
+    setQuickReplies(data || []);
   }
 
   async function loadConversations(wsId: string) {
@@ -302,6 +344,33 @@ export default function AtendimentoPage() {
 
     setSending(true);
 
+    // Nota interna: NUNCA passa pela Evolution API — insere direto na tabela
+    // messages, marcada como is_internal_note, sem chamar send-message. Um
+    // vazamento aqui mandaria a "nota" como mensagem real pro cliente.
+    if (composerMode === 'note') {
+      const { error: insertError } = await supabase.from('messages').insert([
+        {
+          workspace_id: workspaceId,
+          conversation_id: selectedConversation.id,
+          sender_type: 'human',
+          direction: 'outbound',
+          content: messageInput,
+          is_internal_note: true,
+        },
+      ]);
+
+      if (insertError) {
+        alert('Erro ao salvar nota interna: ' + insertError.message);
+        setSending(false);
+        return;
+      }
+
+      setMessageInput('');
+      await loadMessages(selectedConversation.id);
+      setSending(false);
+      return;
+    }
+
     try {
       const res = await fetch('/api/whatsapp/send-message', {
         method: 'POST',
@@ -335,6 +404,49 @@ export default function AtendimentoPage() {
       setShowTyping(true);
       window.setTimeout(() => setShowTyping(false), 1700);
     }
+  }
+
+  function handleToggleComposerMode() {
+    setComposerMode((current) => (current === 'note' ? 'reply' : 'note'));
+  }
+
+  async function handleSyncHistory() {
+    if (!selectedConversation || syncingHistory) return;
+
+    setSyncingHistory(true);
+
+    try {
+      const res = await fetch('/api/whatsapp/sync-history', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ conversationId: selectedConversation.id }),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        alert('Erro ao sincronizar histórico: ' + (result.error || ''));
+        return;
+      }
+
+      await loadMessages(selectedConversation.id);
+    } catch (err) {
+      console.error('Erro inesperado ao sincronizar histórico:', err);
+      alert('Erro inesperado ao sincronizar histórico');
+    } finally {
+      setSyncingHistory(false);
+    }
+  }
+
+  function handleInsertQuickReply(reply: QuickReply) {
+    setMessageInput((current) => (current ? `${current} ${reply.content}` : reply.content));
+    setShowQuickRepliesPopover(false);
+  }
+
+  function handleOpenAttachmentPicker(kind: AttachmentKind) {
+    setShowAttachmentMenu(false);
+    if (!fileInputRef.current) return;
+    fileInputRef.current.accept = ATTACHMENT_ACCEPT[kind];
+    fileInputRef.current.click();
   }
 
   async function handleAttachmentSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -845,8 +957,20 @@ export default function AtendimentoPage() {
                 {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
                     <MessagesSquare className="w-16 h-16 text-muted-foreground/40 mb-3" />
-                    <p className="text-foreground font-medium">Sem mensagens ainda</p>
-                    <p className="text-sm mt-1">Envie a primeira mensagem para começar a conversa</p>
+                    <p className="text-foreground font-medium">Nenhuma mensagem ainda</p>
+                    <p className="text-sm mt-1 max-w-xs">
+                      Envie uma mensagem ou clique em <strong className="text-foreground">Sincronizar</strong> para
+                      importar o histórico
+                    </p>
+                    <button
+                      type="button"
+                      onClick={handleSyncHistory}
+                      disabled={syncingHistory}
+                      className="flex items-center gap-2 mt-4 px-4 py-2 border border-border rounded-full bg-white text-sm font-medium text-foreground hover:border-primary/40 hover:text-primary transition-colors duration-150 disabled:opacity-60"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${syncingHistory ? 'animate-spin' : ''}`} />
+                      {syncingHistory ? 'Sincronizando...' : 'Sincronizar'}
+                    </button>
                   </div>
                 ) : (
                   messages.map((msg) => (
@@ -858,7 +982,9 @@ export default function AtendimentoPage() {
                     >
                       <div
                         className={`max-w-xs px-4 py-2 rounded-lg ${
-                          msg.sender_type === 'human'
+                          msg.is_internal_note
+                            ? 'bg-amber-50 text-foreground border border-amber-200'
+                            : msg.sender_type === 'human'
                             ? 'bg-primary text-white'
                             : msg.sender_type === 'ai'
                             ? 'bg-blue-100 text-foreground border border-blue-200'
@@ -867,10 +993,17 @@ export default function AtendimentoPage() {
                             : 'bg-yellow-50 text-foreground border border-yellow-200'
                         }`}
                       >
-                        {msg.sender_type !== 'human' && msg.sender_type !== 'customer' && (
-                          <p className="text-xs font-semibold mb-1 opacity-75">
-                            {msg.sender_type === 'ai' ? 'IA' : 'Sistema'}
+                        {msg.is_internal_note ? (
+                          <p className="flex items-center gap-1 text-xs font-semibold mb-1 text-amber-700">
+                            <StickyNote className="w-3 h-3" /> Nota interna
                           </p>
+                        ) : (
+                          msg.sender_type !== 'human' &&
+                          msg.sender_type !== 'customer' && (
+                            <p className="text-xs font-semibold mb-1 opacity-75">
+                              {msg.sender_type === 'ai' ? 'IA' : 'Sistema'}
+                            </p>
+                          )
                         )}
 
                         {msg.message_type && msg.message_type !== 'text' && msg.media_url ? (
@@ -921,13 +1054,13 @@ export default function AtendimentoPage() {
                               minute: '2-digit',
                             })}
                           </span>
-                          {msg.sender_type !== 'customer' && msg.wa_status === 'sent' && (
+                          {!msg.is_internal_note && msg.sender_type !== 'customer' && msg.wa_status === 'sent' && (
                             <Check className="w-3.5 h-3.5 flex-shrink-0" />
                           )}
-                          {msg.sender_type !== 'customer' && msg.wa_status === 'delivered' && (
+                          {!msg.is_internal_note && msg.sender_type !== 'customer' && msg.wa_status === 'delivered' && (
                             <CheckCheck className="w-3.5 h-3.5 flex-shrink-0" />
                           )}
-                          {msg.sender_type !== 'customer' && msg.wa_status === 'read' && (
+                          {!msg.is_internal_note && msg.sender_type !== 'customer' && msg.wa_status === 'read' && (
                             <CheckCheck className="w-3.5 h-3.5 flex-shrink-0 text-sky-400" />
                           )}
                         </p>

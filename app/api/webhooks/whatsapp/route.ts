@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createAdminClient } from '@/lib/supabase/admin';
-import { sendTextMessage, getMediaBase64, sendImageByUrl, markMessageAsRead } from '@/lib/evolution-api';
+import { sendTextMessage, getMediaBase64, sendImageByUrl, markMessageAsRead, mapAckToWaStatus } from '@/lib/evolution-api';
 import { decryptSecret } from '@/lib/security/encrypt';
 import { callLlm, ChatMessage } from '@/lib/llm-client';
 import { AiProvider } from '@/lib/ai-models';
@@ -75,7 +75,9 @@ function buildSystemPrompt(profile: {
       'site, que já tem cálculo de frete em tempo real pelo CEP. Nunca mencione frete grátis, desconto, cupom ' +
       'ou qualquer promoção que não esteja explicitamente escrita na Base de Conhecimento ou no catálogo — ' +
       'você não tem acesso ao site da loja em tempo real, então promoções e políticas só existem se estiverem ' +
-      'escritas abaixo.'
+      'escritas abaixo. Nunca despeje o catálogo inteiro de uma vez: se o cliente pedir algo genérico ("tem ' +
+      'roupa feminina?"), cite no máximo 2 ou 3 opções relevantes e faça uma pergunta pra entender melhor o ' +
+      'que ele quer, em vez de listar dezenas de produtos.'
   );
   return lines.join('\n');
 }
@@ -116,33 +118,60 @@ function extractPhotoRequests(replyText: string): { cleanedText: string; product
  * mandar um único parágrafo gigante. Quebra primeiro por parágrafo (linha em
  * branco); se um parágrafo sozinho ainda for grande demais, quebra por frase.
  */
-function splitIntoWhatsappMessages(text: string, maxLen = 350, maxChunks = 4): string[] {
-  const paragraphs = text
-    .split(/\n\s*\n/)
-    .map((p) => p.trim())
+function splitIntoWhatsappMessages(text: string, maxLen = 300, maxChunks = 5): string[] {
+  // Trata parágrafo (linha em branco) E linha simples como unidade candidata —
+  // uma lista de produtos costuma vir uma linha por item, sem linha em branco
+  // entre elas, e precisa quebrar igual a um parágrafo de verdade.
+  const units = text
+    .split(/\n+/)
+    .map((u) => u.trim())
     .filter(Boolean);
 
   const chunks: string[] = [];
+  let current = '';
 
-  for (const paragraph of paragraphs) {
-    if (paragraph.length <= maxLen) {
-      chunks.push(paragraph);
+  function flush() {
+    if (current) {
+      chunks.push(current);
+      current = '';
+    }
+  }
+
+  for (const unit of units) {
+    if (unit.length > maxLen) {
+      flush();
+      // Unidade sozinha já estoura o limite — quebra por frase e, se ainda
+      // assim uma "frase" for maior que o limite, força corte bruto (nunca
+      // deixa uma mensagem sem limite nenhum de tamanho).
+      const sentences = unit.split(/(?<=[.!?])\s+/);
+      let piece = '';
+      for (const sentence of sentences) {
+        const candidate = piece ? `${piece} ${sentence}` : sentence;
+        if (candidate.length > maxLen) {
+          if (piece) chunks.push(piece);
+          if (sentence.length > maxLen) {
+            chunks.push(sentence.slice(0, maxLen));
+            piece = '';
+          } else {
+            piece = sentence;
+          }
+        } else {
+          piece = candidate;
+        }
+      }
+      if (piece) chunks.push(piece);
       continue;
     }
 
-    const sentences = paragraph.split(/(?<=[.!?])\s+/);
-    let current = '';
-    for (const sentence of sentences) {
-      const candidate = current ? `${current} ${sentence}` : sentence;
-      if (candidate.length > maxLen && current) {
-        chunks.push(current);
-        current = sentence;
-      } else {
-        current = candidate;
-      }
+    const candidate = current ? `${current}\n${unit}` : unit;
+    if (candidate.length > maxLen) {
+      flush();
+      current = unit;
+    } else {
+      current = candidate;
     }
-    if (current) chunks.push(current);
   }
+  flush();
 
   if (chunks.length === 0) return [text];
 
@@ -670,46 +699,15 @@ async function tryAutoReply({
 }
 
 /**
- * Mapeia o ack numérico do Baileys (repassado pela Evolution API no evento
- * MESSAGES_UPDATE) para o `wa_status` simplificado que a UI mostra:
- * 0=erro, 1=pending/enviado, 2=server ack (entregue ao WhatsApp), 3=device ack
- * (entregue no aparelho), 4=lido, 5=reproduzido (áudio/vídeo — conta como
- * lido). Também aceita a forma em string que algumas versões da Evolution API
- * mandam no lugar do número (ex.: "DELIVERY_ACK", "READ").
- */
-function mapAckToWaStatus(ack: unknown): 'sent' | 'delivered' | 'read' | 'failed' | null {
-  if (ack === null || ack === undefined) return null;
-
-  const numeric = typeof ack === 'number' ? ack : Number(ack);
-  if (!Number.isNaN(numeric)) {
-    if (numeric <= 0) return 'failed';
-    if (numeric === 1) return 'sent';
-    if (numeric === 2 || numeric === 3) return 'delivered';
-    if (numeric >= 4) return 'read';
-    return null;
-  }
-
-  const text = String(ack).toUpperCase();
-  if (text.includes('ERROR') || text.includes('FAIL')) return 'failed';
-  if (text.includes('READ') || text.includes('PLAYED')) return 'read';
-  if (text.includes('DELIVERY') || text.includes('DELIVERED') || text.includes('SERVER_ACK')) return 'delivered';
-  if (text.includes('PENDING') || text.includes('SENT')) return 'sent';
-  return null;
-}
-
-/**
- * Handler do evento MESSAGES_UPDATE (confirmação de entrega/leitura). O
- * `console.log` do payload cru fica de propósito: o formato exato do evento
- * NÃO foi confirmado contra uma mensagem real da Evolution API nesta sessão
- * (documentação e o padrão do evento `messages.update` do Baileys foram
- * usados como base) — ver ressalva no relatório final. Se o formato divergir,
- * este log em produção (Vercel) é o que permite ajustar sem adivinhar de novo.
- * Best-effort puro: qualquer erro aqui é só logado, nunca propagado.
+ * Handler do evento MESSAGES_UPDATE (confirmação de entrega/leitura). Formato
+ * do status CONFIRMADO ao vivo contra a instância já conectada (ver
+ * `mapAckToWaStatus` em lib/evolution-api.ts): string, não número — o mapeamento
+ * numérico do ack do Baileys (0-5) usado antes era suposição sem validação e
+ * foi substituído. Best-effort puro: qualquer erro aqui é só logado, nunca
+ * propagado.
  */
 async function handleMessagesUpdate(payload: EvolutionWebhookPayload, request: NextRequest) {
   try {
-    console.log('[webhook] messages.update payload recebido:', JSON.stringify(payload));
-
     const instanceName = payload.instance || (payload.data as any)?.instanceName;
     if (!instanceName) return NextResponse.json({ status: 'ignored_no_instance' });
 
@@ -743,7 +741,7 @@ async function handleMessagesUpdate(payload: EvolutionWebhookPayload, request: N
       const ackRaw = update?.update?.status ?? update?.status ?? update?.ack;
       const waStatus = mapAckToWaStatus(ackRaw);
 
-      if (!externalId || !waStatus) continue;
+      if (!externalId) continue;
 
       const { error: updateError } = await admin
         .from('messages')

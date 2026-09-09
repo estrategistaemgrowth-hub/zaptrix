@@ -220,3 +220,91 @@ export async function getMediaBase64(
 export function generateInstanceName(workspaceId: string): string {
   return `zaptrix-${workspaceId.slice(0, 8)}-${Date.now().toString(36)}`;
 }
+
+export interface EvolutionHistoryRecord {
+  key: { id: string; fromMe: boolean; remoteJid: string };
+  pushName?: string;
+  messageType?: string;
+  message?: {
+    conversation?: string;
+    extendedTextMessage?: { text?: string };
+    imageMessage?: { mimetype?: string; caption?: string };
+    videoMessage?: { mimetype?: string; caption?: string };
+    documentMessage?: { mimetype?: string; fileName?: string; caption?: string; title?: string };
+    audioMessage?: { mimetype?: string; ptt?: boolean };
+    stickerMessage?: { mimetype?: string };
+  };
+  messageTimestamp?: number;
+  /** Histórico de status de entrega/leitura desta mensagem (confirmado ao
+   *  vivo contra a instância conectada: array de `{ status: "DELIVERY_ACK" |
+   *  "READ" | "SERVER_ACK" | ... }`, não necessariamente em ordem cronológica). */
+  MessageUpdate?: Array<{ status?: string }>;
+}
+
+interface FindMessagesResponse {
+  messages?: {
+    total: number;
+    pages: number;
+    currentPage: number;
+    records: EvolutionHistoryRecord[];
+  };
+}
+
+/**
+ * Busca o histórico de mensagens trocadas com um número — usado pelo botão
+ * "Sincronizar" quando o cliente já conversou com a loja ANTES do webhook
+ * estar ativo (essas mensagens nunca chegam ao painel sozinhas). Endpoint e
+ * formato de resposta confirmados ao vivo contra a instância já conectada
+ * (não é suposição de documentação).
+ */
+export async function findMessages(
+  instanceName: string,
+  phone: string,
+  limit = 200
+): Promise<EvolutionHistoryRecord[]> {
+  const remoteJid = phone.includes('@') ? phone : `${phone}@s.whatsapp.net`;
+
+  const data = (await evolutionFetch(`/chat/findMessages/${instanceName}`, {
+    method: 'POST',
+    body: JSON.stringify({
+      where: { key: { remoteJid } },
+      limit,
+    }),
+  })) as FindMessagesResponse;
+
+  return data.messages?.records || [];
+}
+
+export type WaStatus = 'sent' | 'delivered' | 'read' | 'failed';
+
+/**
+ * Mapeia o status de entrega/leitura da Evolution API para o `wa_status`
+ * simplificado usado pela UI. Formato STRING confirmado ao vivo contra a
+ * instância conectada (`MessageUpdate: [{ status: "DELIVERY_ACK" }, ...]`) —
+ * não é mais suposição de valor numérico do Baileys (0-5).
+ */
+export function mapAckToWaStatus(status: unknown): WaStatus {
+  if (status === null || status === undefined) return 'failed';
+
+  const text = String(status).toUpperCase();
+  if (text.includes('ERROR') || text.includes('FAIL')) return 'failed';
+  if (text.includes('READ') || text.includes('PLAYED')) return 'read';
+  if (text.includes('DELIVERY_ACK') || text.includes('SERVER_ACK') || text.includes('DELIVERED')) return 'delivered';
+  return 'sent';
+}
+
+/**
+ * Reduz o array `MessageUpdate` de uma mensagem histórica (vindo de
+ * `findMessages`) para um único `wa_status` final — usa o estágio mais
+ * avançado presente no array (lido > entregue > enviado), já que a ordem dos
+ * itens não é garantidamente cronológica.
+ */
+export function reduceWaStatusFromUpdates(updates?: Array<{ status?: string }>): WaStatus {
+  if (!updates || updates.length === 0) return 'sent';
+
+  const mapped = updates.map((u) => mapAckToWaStatus(u?.status));
+  if (mapped.includes('read')) return 'read';
+  if (mapped.includes('delivered')) return 'delivered';
+  if (mapped.every((s) => s === 'failed')) return 'failed';
+  return 'sent';
+}

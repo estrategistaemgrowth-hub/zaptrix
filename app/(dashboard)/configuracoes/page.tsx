@@ -1537,10 +1537,25 @@ export default function ConfiguracoesPage() {
           </div>
 
           {workspaceBilling && (
-            <p className="text-xs text-muted-foreground mb-5">
-              {activeConnectionsCount} de {1 + workspaceBilling.extra_whatsapp_connections} número(s) conectado(s)
-              {activeConnectionsCount >= 1 + workspaceBilling.extra_whatsapp_connections &&
-                ' — contrate uma instância adicional para conectar mais um número (R$39,90/mês)'}
+            <p className="text-xs text-muted-foreground mb-5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <span>
+                {activeConnectionsCount} de {1 + workspaceBilling.extra_whatsapp_connections} número(s) conectado(s)
+              </span>
+              {!workspaceBilling.is_complimentary && (
+                <>
+                  <span>·</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveSection('assinatura');
+                      setShowBuyInstance(true);
+                    }}
+                    className="text-primary hover:underline font-medium"
+                  >
+                    Precisa de mais um número? Contratar instância adicional (R$ 39,90/mês)
+                  </button>
+                </>
+              )}
             </p>
           )}
 

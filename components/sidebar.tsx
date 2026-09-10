@@ -62,7 +62,6 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [aiHandlingCount, setAiHandlingCount] = useState(0);
   const [isOwnerOrAdmin, setIsOwnerOrAdmin] = useState(true);
 
   useEffect(() => {
@@ -88,14 +87,13 @@ export function Sidebar() {
 
       const { data } = await supabase
         .from('conversations')
-        .select('unread_count, ai_enabled')
+        .select('unread_count')
         .eq('workspace_id', workspace.workspaceId)
         .eq('status', 'open');
 
       if (cancelled || !data) return;
 
       setUnreadCount(data.reduce((sum, c) => sum + (c.unread_count || 0), 0));
-      setAiHandlingCount(data.filter((c) => c.ai_enabled).length);
     }
 
     loadCounters();
@@ -168,7 +166,7 @@ export function Sidebar() {
             >
               <span className="relative flex-shrink-0">
                 <Icon className="w-4 h-4 transition-transform duration-200 group-hover:scale-110" />
-                {isAtendimento && unreadCount > 0 && (
+                {collapsed && isAtendimento && unreadCount > 0 && (
                   <span
                     title={`${unreadCount} mensagem(ns) não lida(s)`}
                     className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-destructive ring-2 ring-card animate-pulse"
@@ -176,14 +174,14 @@ export function Sidebar() {
                 )}
               </span>
               {!collapsed && <span className="text-sm">{link.label}</span>}
-              {!collapsed && isAtendimento && aiHandlingCount > 0 && (
+              {!collapsed && isAtendimento && unreadCount > 0 && (
                 <span
-                  title={`${aiHandlingCount} conversa(s) sendo atendida(s) pela IA`}
+                  title={`${unreadCount} mensagem(ns) não lida(s)`}
                   className={`ml-auto flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-medium ${
-                    isActive ? 'bg-white/20 text-white' : 'gradient-brand text-white'
+                    isActive ? 'bg-white/20 text-white' : 'bg-destructive text-white'
                   }`}
                 >
-                  {aiHandlingCount}
+                  {unreadCount}
                 </span>
               )}
             </Link>

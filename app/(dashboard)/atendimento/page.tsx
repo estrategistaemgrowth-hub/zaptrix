@@ -782,7 +782,11 @@ export default function AtendimentoPage() {
 
       <div className="flex-1 flex overflow-hidden gap-5">
         {viewMode === 'list' ? (
-        <div className="w-80 bg-card border border-border rounded-2xl shadow-sm flex flex-col overflow-hidden">
+        <div
+          className={`${
+            selectedConversation ? 'hidden md:flex' : 'flex'
+          } w-full md:w-80 bg-card border border-border rounded-2xl shadow-sm flex-col overflow-hidden`}
+        >
           <div className="p-4 border-b border-border bg-muted">
             <h2 className="font-semibold text-foreground">Conversas</h2>
           </div>
@@ -906,13 +910,18 @@ export default function AtendimentoPage() {
                   key={col.status}
                   onClick={() => toggleColumnVisibility(col.status)}
                   title={`Mostrar coluna ${col.label}`}
-                  className="w-14 flex-shrink-0 flex flex-col items-center gap-2 py-4 bg-card border border-border rounded-2xl shadow-sm hover:bg-muted transition-colors duration-150"
+                  className="w-14 flex-shrink-0 flex flex-col items-center gap-3 py-4 bg-card border border-border rounded-2xl shadow-sm hover:bg-muted transition-colors duration-150"
                 >
                   <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${col.dot}`} />
                   <span className="text-xs font-medium text-muted-foreground bg-muted border border-border rounded-full px-1.5 py-0.5">
                     {columnConversations.length}
                   </span>
-                  <ChevronRight className="w-4 h-4 text-muted-foreground mt-1" />
+                  <ChevronRight className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                  <span
+                    className="text-xs font-semibold text-foreground [writing-mode:vertical-rl] rotate-180 py-1"
+                  >
+                    {col.label}
+                  </span>
                 </button>
               );
             }
@@ -1058,7 +1067,7 @@ export default function AtendimentoPage() {
                                         setOpenMoveMenuId(null);
                                       }}
                                     />
-                                    <div className="absolute right-0 bottom-full mb-1 z-50 w-44 bg-card border border-border rounded-xl shadow-lg overflow-hidden">
+                                    <div className="absolute right-0 bottom-full mb-1 z-50 w-44 bg-card border border-border rounded-lg shadow-lg overflow-hidden">
                                       {otherColumns.map((target) => (
                                         <button
                                           key={target.status}
@@ -1092,21 +1101,32 @@ export default function AtendimentoPage() {
 
         {/* Chat */}
         <div
-          className={`bg-card border border-border rounded-2xl shadow-sm flex flex-col overflow-hidden ${
-            viewMode === 'kanban' ? 'w-96 flex-shrink-0' : 'flex-1'
-          }`}
+          className={`bg-card border border-border rounded-2xl shadow-sm flex-col overflow-hidden ${
+            viewMode === 'list' && !selectedConversation ? 'hidden md:flex' : 'flex'
+          } ${viewMode === 'kanban' ? 'w-96 flex-shrink-0' : 'w-full flex-1'}`}
         >
           {selectedConversation ? (
             <>
               {/* Header */}
               <div className="p-6 border-b border-border bg-muted flex justify-between items-center gap-3">
-                <div className="min-w-0">
-                  <h2 className="text-xl font-bold text-foreground truncate">
-                    {contactLabel(selectedConversation.contact)}
-                  </h2>
-                  <p className="text-sm text-muted-foreground truncate">
-                    {selectedConversation.contact?.phone}
-                  </p>
+                <div className="flex items-center gap-2 min-w-0">
+                  {viewMode === 'list' && (
+                    <button
+                      onClick={() => setSelectedConversation(null)}
+                      title="Voltar pra lista"
+                      className="md:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground flex-shrink-0"
+                    >
+                      <ChevronLeft className="w-5 h-5" />
+                    </button>
+                  )}
+                  <div className="min-w-0">
+                    <h2 className="text-xl font-bold text-foreground truncate">
+                      {contactLabel(selectedConversation.contact)}
+                    </h2>
+                    <p className="text-sm text-muted-foreground truncate">
+                      {selectedConversation.contact?.phone}
+                    </p>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 flex-shrink-0">

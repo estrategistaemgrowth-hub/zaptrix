@@ -114,7 +114,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className={`shrink-0 sticky top-4 self-start bg-card border border-border rounded-2xl shadow-sm h-[calc(100vh-2rem)] flex flex-col p-4 transition-[width] duration-200 ${
+      className={`hidden md:flex shrink-0 sticky top-4 self-start bg-card border border-border rounded-2xl shadow-sm h-[calc(100vh-2rem)] flex-col p-4 transition-[width] duration-200 ${
         collapsed ? 'w-20' : 'w-64'
       } ${mounted ? '' : 'invisible'}`}
     >

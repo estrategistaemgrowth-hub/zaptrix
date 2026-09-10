@@ -6,6 +6,7 @@ import { callLlm, ChatMessage } from '@/lib/llm-client';
 import { AiProvider } from '@/lib/ai-models';
 import { transcribeAudio } from '@/lib/transcription';
 import { checkRateLimit } from '@/lib/rate-limit';
+import { tokenize, scoreOverlap } from '@/lib/text-relevance';
 
 interface BusinessHoursDay {
   enabled: boolean;
@@ -239,18 +240,29 @@ function formatPrice(value: number | null): string {
  * Produtos" da página de IA). Limita quantidade/tamanho pra não estourar o
  * contexto do modelo em catálogos grandes.
  */
+// Tamanho do pool buscado no banco antes de rankear por relevância — bem
+// maior que o que efetivamente entra no prompt, pra dar chance de cobrir
+// catálogos grandes (até 1000 produtos no plano Enterprise) sem estourar
+// o limit padrão de linhas do PostgREST silenciosamente.
+const KNOWLEDGE_POOL_LIMIT = 200;
+const PRODUCTS_POOL_LIMIT = 500;
+// Quantos itens de fato entram no prompt, depois de rankeados.
+const KNOWLEDGE_TOP_N = 20;
+const PRODUCTS_TOP_N = 30;
+
 async function buildKnowledgeContext(
   admin: ReturnType<typeof createAdminClient>,
-  workspaceId: string
+  workspaceId: string,
+  queryText: string
 ): Promise<{ contextText: string; productImages: Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }> }> {
-  const [{ data: entries }, { data: products }] = await Promise.all([
+  const [{ data: allEntries }, { data: allProducts }] = await Promise.all([
     admin
       .from('knowledge_entries')
       .select('title, category, content')
       .eq('workspace_id', workspaceId)
       .eq('active', true)
       .order('updated_at', { ascending: false })
-      .limit(20),
+      .limit(KNOWLEDGE_POOL_LIMIT),
     admin
       .from('products')
       .select(
@@ -259,8 +271,34 @@ async function buildKnowledgeContext(
       .eq('workspace_id', workspaceId)
       .eq('active', true)
       .order('updated_at', { ascending: false })
-      .limit(60),
+      .limit(PRODUCTS_POOL_LIMIT),
   ]);
+
+  // Recuperação por relevância (técnica de retrieval do RAG_Techniques,
+  // github.com/NirDiamant/RAG_Techniques, adaptada sem embeddings — ver
+  // lib/text-relevance.ts) — em vez de sempre pegar os últimos N por data,
+  // rankeia pelo que o cliente de fato perguntou. Mensagem sem termo
+  // específico (ex: "oi", "bom dia") cai no fallback por recência de sempre,
+  // pra nunca ficar sem nenhum contexto.
+  const queryTokens = tokenize(queryText);
+
+  const entries =
+    queryTokens.length > 0 && allEntries && allEntries.length > 0
+      ? [...allEntries]
+          .sort((a, b) => scoreOverlap(queryTokens, `${b.title} ${b.content}`) - scoreOverlap(queryTokens, `${a.title} ${a.content}`))
+          .slice(0, KNOWLEDGE_TOP_N)
+      : (allEntries || []).slice(0, KNOWLEDGE_TOP_N);
+
+  const products =
+    queryTokens.length > 0 && allProducts && allProducts.length > 0
+      ? [...allProducts]
+          .sort(
+            (a, b) =>
+              scoreOverlap(queryTokens, `${b.name} ${b.category || ''} ${b.description || ''}`) -
+              scoreOverlap(queryTokens, `${a.name} ${a.category || ''} ${a.description || ''}`)
+          )
+          .slice(0, PRODUCTS_TOP_N)
+      : (allProducts || []).slice(0, PRODUCTS_TOP_N);
 
   const blocks: string[] = [];
   const productImages = new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>();
@@ -811,8 +849,17 @@ async function tryAutoReply({
       .eq('id', contactId)
       .maybeSingle();
 
+    // Query de recuperação: últimas mensagens do cliente na conversa (não só
+    // a mais recente) — cobre pergunta de seguimento curta ("e tem em azul?")
+    // que só faz sentido junto com o que ele perguntou antes.
+    const retrievalQuery = history
+      .filter((m) => m.role === 'user')
+      .slice(-3)
+      .map((m) => m.content)
+      .join(' ');
+
     const { contextText: knowledgeContext, productImages } = profile.use_knowledge_base
-      ? await buildKnowledgeContext(admin, workspaceId)
+      ? await buildKnowledgeContext(admin, workspaceId, retrievalQuery)
       : { contextText: '', productImages: new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>() };
     const memoryContext = contact?.ai_memory
       ? `\n\nMemória sobre este cliente (o que já sabemos dele de conversas anteriores):\n${contact.ai_memory}`

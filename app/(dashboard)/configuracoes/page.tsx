@@ -735,9 +735,32 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      <div className="flex gap-6 items-start">
-        {/* Submenu de categorias */}
-        <div className="w-64 shrink-0 bg-card border border-border rounded-2xl shadow-sm p-4">
+      {/* Submenu mobile: linha horizontal com scroll, sem os grupos (não cabe
+       *  a lista inteira empilhada acima do conteúdo numa tela de celular). */}
+      <div className="md:hidden flex gap-2 overflow-x-auto pb-3 -mx-2 px-2">
+        {SECTION_GROUPS.flatMap((g) => g.items).map((item) => {
+          const Icon = item.icon;
+          const isActive = activeSection === item.id;
+          return (
+            <button
+              key={item.id}
+              onClick={() => setActiveSection(item.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap flex-shrink-0 border transition-colors duration-150 ${
+                isActive
+                  ? 'bg-primary text-white border-primary'
+                  : 'bg-card text-foreground border-border hover:bg-muted'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5 flex-shrink-0" />
+              {item.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="flex flex-col md:flex-row gap-6 items-start">
+        {/* Submenu desktop: lista vertical agrupada */}
+        <div className="hidden md:block w-64 shrink-0 bg-card border border-border rounded-2xl shadow-sm p-4">
           {SECTION_GROUPS.map((group) => (
             <div key={group.label} className="mb-5 last:mb-0">
               <p className="px-3 mb-2 text-xs font-semibold text-muted-foreground tracking-wide">
@@ -768,7 +791,7 @@ export default function ConfiguracoesPage() {
         </div>
 
         {/* Conteúdo da seção ativa */}
-        <div className="flex-1 min-w-0 animate-fade-in" key={activeSection}>
+        <div className="flex-1 min-w-0 w-full animate-fade-in" key={activeSection}>
         {activeSection === 'membros' && (
         <div className="bg-card border border-border rounded-2xl shadow-sm p-6">
           <h2 className="text-xl font-semibold text-foreground mb-6">Gerenciar Membros</h2>

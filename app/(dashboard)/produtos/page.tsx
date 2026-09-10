@@ -637,12 +637,12 @@ export default function ProdutosPage() {
   return (
     <div className="p-2">
       <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Produtos</h1>
             <p className="text-muted-foreground">Catálogo de produtos para recomendações</p>
           </div>
-          <div className="flex gap-3">
+          <div className="flex flex-wrap gap-2 sm:gap-3">
             <div className="flex items-center border border-border rounded-lg overflow-hidden">
               <button
                 onClick={() => setViewMode('grid')}
@@ -1637,34 +1637,34 @@ export default function ProdutosPage() {
       </div>
 
       {selectionMode && selectedIds.size > 0 && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-card border border-border rounded-2xl shadow-lg px-5 py-3 flex items-center gap-3">
-          <span className="text-sm font-medium text-foreground whitespace-nowrap">
-            {selectedIds.size} selecionado(s)
+        <div className="fixed bottom-20 md:bottom-6 left-1/2 -translate-x-1/2 z-40 max-w-[95vw] bg-card border border-border rounded-2xl shadow-lg px-3 sm:px-5 py-3 flex items-center gap-1.5 sm:gap-3 overflow-x-auto">
+          <span className="text-sm font-medium text-foreground whitespace-nowrap flex-shrink-0">
+            {selectedIds.size} sel.
           </span>
-          <div className="w-px h-6 bg-border" />
+          <div className="w-px h-6 bg-border flex-shrink-0" />
           <button
             onClick={() => setShowBulkPriceModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-muted"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-muted flex-shrink-0"
           >
             <Pencil className="w-3.5 h-3.5" />
-            Ajustar preço
+            <span className="hidden sm:inline">Ajustar preço</span>
           </button>
           <button
             onClick={() => setShowBulkTagModal(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-muted"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm font-medium text-foreground border border-border rounded-lg hover:bg-muted flex-shrink-0"
           >
             <Tag className="w-3.5 h-3.5" />
-            Adicionar tag
+            <span className="hidden sm:inline">Adicionar tag</span>
           </button>
           <button
             onClick={handleBulkDelete}
             disabled={bulkActionSubmitting}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 disabled:opacity-50"
+            className="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 text-sm font-medium text-destructive border border-destructive/30 rounded-lg hover:bg-destructive/10 disabled:opacity-50 flex-shrink-0"
           >
             <Trash2 className="w-3.5 h-3.5" />
-            Excluir
+            <span className="hidden sm:inline">Excluir</span>
           </button>
-          <button onClick={exitSelectionMode} className="p-1.5 text-muted-foreground hover:text-foreground">
+          <button onClick={exitSelectionMode} className="p-1.5 text-muted-foreground hover:text-foreground flex-shrink-0">
             <X className="w-4 h-4" />
           </button>
         </div>

@@ -185,7 +185,7 @@ export default function ContatosPage() {
   return (
     <div className="p-2">
       <div className="max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
             <Users className="w-8 h-8 text-primary" />
             <div>
@@ -193,7 +193,7 @@ export default function ContatosPage() {
               <p className="text-muted-foreground">{filteredContacts.length} contatos</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleExportCsv}
               disabled={filteredContacts.length === 0}

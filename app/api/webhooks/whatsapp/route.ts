@@ -314,6 +314,60 @@ async function buildKnowledgeContext(
   return { contextText, productImages };
 }
 
+// Rascunho só passa pela verificação extra se citar algo que vale a pena
+// conferir (preço, frete, desconto, prazo) — a maioria das respostas
+// (saudação, pergunta de esclarecimento) não paga o custo/latência extra.
+const RISKY_CLAIM_PATTERN = /r\$\s?\d|gr[aá]tis|desconto|cupom|promo[çc][aã]o|frete|parcelas?|% ?off/i;
+
+/**
+ * Verificação de fundamentação (grounding) da resposta antes de enviar —
+ * ideia equivalente ao "verify-and-refine contra uma referência" do textgrad
+ * (github.com/zou-group/textgrad), implementada nativamente como uma
+ * segunda chamada curta ao mesmo provedor/modelo já configurado, sem
+ * depender da lib Python (não roda em runtime Node/serverless). Só dispara
+ * quando o rascunho contém uma afirmação de risco (ver RISKY_CLAIM_PATTERN)
+ * e existe Base de Conhecimento carregada pra comparar — best-effort, nunca
+ * bloqueia o envio se a verificação falhar.
+ */
+async function verifyReplyGrounding(
+  provider: AiProvider,
+  apiKey: string,
+  modelId: string,
+  knowledgeContext: string,
+  draftReply: string
+): Promise<string> {
+  if (!knowledgeContext || !RISKY_CLAIM_PATTERN.test(draftReply)) {
+    return draftReply;
+  }
+
+  try {
+    const verified = await callLlm(
+      provider,
+      apiKey,
+      modelId,
+      'Você é um verificador de fatos para um vendedor de e-commerce no WhatsApp. Responda ' +
+        'APENAS com o texto final revisado, sem aspas, sem comentários, sem explicar o que mudou.',
+      [
+        {
+          role: 'user',
+          content:
+            'Abaixo está a BASE DE CONHECIMENTO real da loja e um RASCUNHO DE RESPOSTA que está prestes a ser ' +
+            'enviado a um cliente. Verifique se o RASCUNHO afirma algum preço, prazo, condição de frete, desconto, ' +
+            'cupom ou disponibilidade que NÃO esteja respaldado pela BASE DE CONHECIMENTO. Se encontrar alguma ' +
+            'afirmação não respaldada, reescreva o RASCUNHO removendo ou corrigindo só essa parte, mantendo o ' +
+            'resto do texto, tom e quebras de linha idênticos. Se o RASCUNHO já estiver totalmente respaldado, ' +
+            `devolva-o exatamente como está.\n\nBASE DE CONHECIMENTO:${knowledgeContext}\n\nRASCUNHO:\n${draftReply}`,
+        },
+      ]
+    );
+
+    return verified?.trim() || draftReply;
+  } catch (err) {
+    console.error('Erro na verificação de fundamentação da resposta (ignorado, usando rascunho original):', err);
+    return draftReply;
+  }
+}
+
 interface EvolutionWebhookPayload {
   event: string;
   instance?: string;
@@ -810,7 +864,14 @@ async function tryAutoReply({
       }
     }
 
-    const replyText = cleanedText || rawReply;
+    const draftReplyText = cleanedText || rawReply;
+    const replyText = await verifyReplyGrounding(
+      credential.provider as AiProvider,
+      apiKey,
+      credential.model_id || '',
+      knowledgeContext,
+      draftReplyText
+    );
     const messageChunks = splitIntoWhatsappMessages(replyText);
 
     for (let i = 0; i < messageChunks.length; i++) {

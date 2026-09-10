@@ -216,7 +216,7 @@ export function ProductDetailModal({ product, workspaceId, categories, onClose, 
           <div>
             <p className="text-sm font-medium text-foreground mb-2">Foto do produto</p>
             <div className="flex items-center gap-4">
-              <div className="w-24 h-24 rounded-xl border border-border bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
+              <div className="w-24 h-24 rounded-2xl border border-border bg-muted flex items-center justify-center overflow-hidden flex-shrink-0">
                 {form.image_url ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={form.image_url} alt={form.name} className="w-full h-full object-cover" />

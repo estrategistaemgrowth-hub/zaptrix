@@ -208,6 +208,7 @@ export default function ConfiguracoesPage() {
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
   const [expandedInvoiceQrId, setExpandedInvoiceQrId] = useState<string | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  const [showConnectionLimitModal, setShowConnectionLimitModal] = useState(false);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [planPickerResult, setPlanPickerResult] = useState<{
     pixQrCode: string | null;
@@ -690,6 +691,11 @@ export default function ConfiguracoesPage() {
       const result = await res.json();
 
       if (!res.ok) {
+        if (result.limitReached) {
+          setShowConnectionLimitModal(true);
+          setConnecting(false);
+          return;
+        }
         setError(result.error || 'Erro ao conectar WhatsApp');
         setConnecting(false);
         return;
@@ -864,6 +870,9 @@ export default function ConfiguracoesPage() {
   }
 
   const attendantCount = members.filter((m) => m.role === 'atendente' || m.role === 'admin').length;
+  // Conexão desconectada não ocupa vaga do limite de números — só conta o
+  // que está de fato ativo/conectando (mesmo critério do backend).
+  const activeConnectionsCount = connections.filter((c) => c.status !== 'disconnected').length;
 
   return (
     <div className="p-2">
@@ -1019,7 +1028,7 @@ export default function ConfiguracoesPage() {
               members.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between gap-2 p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
+                  className="flex items-center justify-between gap-2 p-4 border border-border rounded-2xl bg-muted transition-all duration-200 hover:shadow-sm"
                 >
                   <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative flex-shrink-0">
@@ -1139,7 +1148,7 @@ export default function ConfiguracoesPage() {
           </div>
 
           {planPickerResult ? (
-            <div className="mb-6 p-4 border border-border rounded-xl bg-muted space-y-3">
+            <div className="mb-6 p-4 border border-border rounded-2xl bg-muted space-y-3">
               {planPickerResult.warning && (
                 <p className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
                   {planPickerResult.warning}
@@ -1518,12 +1527,7 @@ export default function ConfiguracoesPage() {
             {!qrCode && (
               <button
                 onClick={handleConnectWhatsapp}
-                disabled={connecting || (workspaceBilling ? connections.length >= 1 + workspaceBilling.extra_whatsapp_connections : false)}
-                title={
-                  workspaceBilling && connections.length >= 1 + workspaceBilling.extra_whatsapp_connections
-                    ? 'Limite de números atingido — fale com o suporte para contratar mais uma instância'
-                    : undefined
-                }
+                disabled={connecting}
                 className="flex items-center gap-2 px-4 py-2 btn-gradient text-sm font-medium disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
@@ -1534,9 +1538,9 @@ export default function ConfiguracoesPage() {
 
           {workspaceBilling && (
             <p className="text-xs text-muted-foreground mb-5">
-              {connections.length} de {1 + workspaceBilling.extra_whatsapp_connections} número(s) conectado(s)
-              {connections.length >= 1 + workspaceBilling.extra_whatsapp_connections &&
-                ' — fale com o suporte para contratar uma instância adicional (R$39,90/mês)'}
+              {activeConnectionsCount} de {1 + workspaceBilling.extra_whatsapp_connections} número(s) conectado(s)
+              {activeConnectionsCount >= 1 + workspaceBilling.extra_whatsapp_connections &&
+                ' — contrate uma instância adicional para conectar mais um número (R$39,90/mês)'}
             </p>
           )}
 
@@ -1832,7 +1836,7 @@ export default function ConfiguracoesPage() {
               </p>
               <div className="space-y-4">
                 {connections.map((conn) => (
-                  <div key={conn.id} className="p-4 border border-border rounded-xl bg-muted">
+                  <div key={conn.id} className="p-4 border border-border rounded-2xl bg-muted">
                     <p className="text-sm font-medium text-foreground mb-2">
                       {conn.phone_number ? `+${conn.phone_number}` : conn.instance_name}
                     </p>
@@ -2093,6 +2097,44 @@ export default function ConfiguracoesPage() {
 
       {showApiKeyGuide && <ApiKeyGuideModal onClose={() => setShowApiKeyGuide(false)} />}
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
+
+      {showConnectionLimitModal &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-backdrop-in">
+            <div className="bg-card rounded-2xl shadow-lg w-full max-w-sm p-6 animate-modal-in text-center">
+              <div className="w-12 h-12 rounded-full bg-primary/10 text-primary flex items-center justify-center mx-auto mb-4">
+                <Smartphone className="w-6 h-6" />
+              </div>
+              <h3 className="text-lg font-semibold text-foreground mb-1">Limite de números atingido</h3>
+              <p className="text-sm text-muted-foreground mb-5">
+                Seu plano inclui {workspaceBilling ? 1 + workspaceBilling.extra_whatsapp_connections : 1} número(s)
+                de WhatsApp, todos já em uso. Contrate uma instância adicional para conectar mais um número —
+                R$ 39,90/mês, liberada na hora após o pagamento.
+              </p>
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowConnectionLimitModal(false);
+                    setActiveSection('assinatura');
+                    setShowBuyInstance(true);
+                  }}
+                  className="btn-gradient font-medium py-2.5"
+                >
+                  Contratar instância adicional
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowConnectionLimitModal(false)}
+                  className="px-4 py-2 text-sm text-muted-foreground hover:text-foreground"
+                >
+                  Agora não
+                </button>
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
     </div>
   );
 }

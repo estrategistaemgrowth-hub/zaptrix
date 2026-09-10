@@ -27,6 +27,36 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
   }
 
+  // Uma conexão "desconectada" (logout, ou sessão que caiu na Evolution API)
+  // não deveria ocupar vaga nenhuma nem impedir reconectar o mesmo número —
+  // reaproveita a linha em vez de inserir outra e acumular registros órfãos.
+  const { data: existingConnections } = await supabase
+    .from('whatsapp_connections')
+    .select('id, status')
+    .eq('workspace_id', membership.workspace_id);
+
+  const disconnectedRow = (existingConnections || []).find((c) => c.status === 'disconnected');
+  const activeCount = (existingConnections || []).filter((c) => c.status !== 'disconnected').length;
+
+  if (!disconnectedRow) {
+    const { data: workspace } = await supabase
+      .from('workspaces')
+      .select('extra_whatsapp_connections')
+      .eq('id', membership.workspace_id)
+      .maybeSingle();
+
+    const limit = 1 + (workspace?.extra_whatsapp_connections || 0);
+    if (activeCount >= limit) {
+      return NextResponse.json(
+        {
+          error: 'Limite de números atingido — contrate uma instância adicional para conectar mais um número.',
+          limitReached: true,
+        },
+        { status: 403 }
+      );
+    }
+  }
+
   const instanceName = generateInstanceName(membership.workspace_id);
   const webhookSecret = generateWebhookSecret();
 
@@ -41,21 +71,28 @@ export async function POST(request: NextRequest) {
       console.error('Erro ao configurar webhook:', webhookErr);
     }
 
-    const { data: connection, error: insertError } = await supabase
-      .from('whatsapp_connections')
-      .insert([
-        {
-          workspace_id: membership.workspace_id,
-          instance_name: instanceName,
-          status: 'connecting',
-          webhook_secret: webhookSecret,
-        },
-      ])
-      .select('id')
-      .single();
+    const { data: connection, error: saveError } = disconnectedRow
+      ? await supabase
+          .from('whatsapp_connections')
+          .update({ instance_name: instanceName, status: 'connecting', webhook_secret: webhookSecret })
+          .eq('id', disconnectedRow.id)
+          .select('id')
+          .single()
+      : await supabase
+          .from('whatsapp_connections')
+          .insert([
+            {
+              workspace_id: membership.workspace_id,
+              instance_name: instanceName,
+              status: 'connecting',
+              webhook_secret: webhookSecret,
+            },
+          ])
+          .select('id')
+          .single();
 
-    if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 400 });
+    if (saveError) {
+      return NextResponse.json({ error: saveError.message }, { status: 400 });
     }
 
     return NextResponse.json({

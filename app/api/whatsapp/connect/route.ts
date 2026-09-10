@@ -165,11 +165,16 @@ export async function PATCH(request: NextRequest) {
   try {
     await logoutInstance(connection.instance_name);
   } catch (err) {
-    console.error('Erro ao desconectar instância na Evolution API:', err);
-    return NextResponse.json(
-      { error: err instanceof Error ? err.message : 'Erro ao desconectar' },
-      { status: 500 }
-    );
+    // Instância já pode não existir mais na Evolution API (ex: caiu por conflito
+    // de sessão, servidor reiniciou) — mesmo tratamento tolerante do DELETE
+    // logo abaixo. Nesse caso não há nada pra "desconectar" de verdade, mas o
+    // registro local ainda deve refletir que não está mais conectado.
+    const message = err instanceof Error ? err.message : String(err);
+    const notFound = /404|does not exist|not found/i.test(message);
+    console.error('Erro ao desconectar instância na Evolution API' + (notFound ? ' (ignorado, instância já não existe)' : '') + ':', err);
+    if (!notFound) {
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
   }
 
   const { error: updateError } = await supabase

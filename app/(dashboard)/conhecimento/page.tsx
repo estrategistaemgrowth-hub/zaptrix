@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { Upload, Trash2, FileText, BookOpen, ToggleLeft, ToggleRight, Link2, RefreshCw, Loader2 } from 'lucide-react';
 import { SkeletonCard } from '@/components/skeleton';
+import { ConfirmDialog, ConfirmState } from '@/components/confirm-dialog';
 
 interface KnowledgeEntry {
   id: string;
@@ -32,6 +33,7 @@ export default function ConhecimentoPage() {
   const [urlError, setUrlError] = useState('');
   const [pendingSourceUrl, setPendingSourceUrl] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -190,15 +192,21 @@ export default function ConhecimentoPage() {
     await loadEntries(workspaceId);
   }
 
-  async function handleDeleteEntry(id: string) {
-    if (!workspaceId || !confirm('Deletar esta entrada?')) return;
-
-    const { error: deleteError } = await supabase.from('knowledge_entries').delete().eq('id', id);
-    if (deleteError) {
-      alert('Erro ao deletar: ' + deleteError.message);
-      return;
-    }
-    await loadEntries(workspaceId);
+  function handleDeleteEntry(id: string) {
+    if (!workspaceId) return;
+    setConfirmState({
+      message: 'Deletar esta entrada da Base de Conhecimento?',
+      confirmLabel: 'Deletar',
+      danger: true,
+      onConfirm: async () => {
+        const { error: deleteError } = await supabase.from('knowledge_entries').delete().eq('id', id);
+        if (deleteError) {
+          alert('Erro ao deletar: ' + deleteError.message);
+          return;
+        }
+        await loadEntries(workspaceId);
+      },
+    });
   }
 
   return (
@@ -460,6 +468,7 @@ export default function ConhecimentoPage() {
           )}
         </div>
       </div>
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

@@ -6,6 +6,7 @@ import { ensureWorkspace } from '@/lib/workspace';
 import { fetchAllRows } from '@/lib/fetch-all-rows';
 import { downloadCsv } from '@/lib/csv-export';
 import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal, Download, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ConfirmDialog, ConfirmState } from '@/components/confirm-dialog';
 
 const PAGE_SIZE = 25;
 
@@ -26,6 +27,7 @@ export default function ContatosPage() {
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({ name: '', phone: '', tagsInput: '', notes: '' });
@@ -171,15 +173,21 @@ export default function ContatosPage() {
     await loadContacts(workspaceId);
   }
 
-  async function handleDeleteContact(id: string) {
-    if (!workspaceId || !confirm('Remover este contato?')) return;
-
-    const { error: deleteError } = await supabase.from('contacts').delete().eq('id', id);
-    if (deleteError) {
-      alert('Erro ao remover contato: ' + deleteError.message);
-      return;
-    }
-    await loadContacts(workspaceId);
+  function handleDeleteContact(id: string) {
+    if (!workspaceId) return;
+    setConfirmState({
+      message: 'Remover este contato? Todo o histórico de conversas e mensagens com ele é apagado junto — essa ação não pode ser desfeita.',
+      confirmLabel: 'Remover',
+      danger: true,
+      onConfirm: async () => {
+        const { error: deleteError } = await supabase.from('contacts').delete().eq('id', id);
+        if (deleteError) {
+          alert('Erro ao remover contato: ' + deleteError.message);
+          return;
+        }
+        await loadContacts(workspaceId);
+      },
+    });
   }
 
   return (
@@ -550,6 +558,7 @@ export default function ContatosPage() {
           )}
         </div>
       </div>
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

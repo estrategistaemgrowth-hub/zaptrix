@@ -11,6 +11,7 @@ import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
 import { QuotaBar } from '@/components/quota-bar';
 import { PlanPicker } from '@/components/plan-picker';
+import { ConfirmDialog, ConfirmState } from '@/components/confirm-dialog';
 import {
   Plus,
   Trash2,
@@ -206,6 +207,7 @@ export default function ConfiguracoesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
   const [expandedInvoiceQrId, setExpandedInvoiceQrId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [planPickerResult, setPlanPickerResult] = useState<{
     pixQrCode: string | null;
@@ -381,11 +383,21 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  async function handleCancelSubscription(action: 'cancel' | 'reactivate') {
-    if (action === 'cancel' && !window.confirm('Cancelar a assinatura? Você mantém acesso até o vencimento atual.')) {
+  function handleCancelSubscription(action: 'cancel' | 'reactivate') {
+    if (action === 'cancel') {
+      setConfirmState({
+        title: 'Cancelar assinatura',
+        message: 'Você mantém acesso até o vencimento atual — a assinatura só deixa de renovar depois disso.',
+        confirmLabel: 'Cancelar assinatura',
+        danger: true,
+        onConfirm: () => performCancelSubscription('cancel'),
+      });
       return;
     }
+    performCancelSubscription('reactivate');
+  }
 
+  async function performCancelSubscription(action: 'cancel' | 'reactivate') {
     setCancelingSubscription(true);
     try {
       const res = await fetch('/api/subscription/cancel', {
@@ -550,6 +562,24 @@ export default function ConfiguracoesPage() {
 
     setConnections(withUsage);
 
+    // Re-sincroniza em segundo plano o status real das conexões marcadas como
+    // "conectado" — corrige sozinho o balão preso em "Conectado" quando a
+    // sessão caiu direto na Evolution API (conflito de sessão, servidor
+    // reiniciado) sem nenhum evento chegar até aqui pra atualizar o registro.
+    const connectedRows = withUsage.filter((c) => c.status === 'connected');
+    if (connectedRows.length > 0) {
+      Promise.all(
+        connectedRows.map((c) =>
+          fetch(`/api/whatsapp/status?connectionId=${c.id}`)
+            .then((res) => (res.ok ? res.json() : null))
+            .then((result) => result && result.status !== 'connected')
+            .catch(() => false)
+        )
+      ).then((mismatches) => {
+        if (mismatches.some(Boolean)) loadConnections(wsId);
+      });
+    }
+
     if (rows.length > 0) {
       const { data: attendantRows } = await supabase
         .from('connection_attendants')
@@ -625,15 +655,20 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  async function handleRemoveMember(memberId: string) {
-    if (!confirm('Remover este membro?')) return;
-
-    const { error: deleteError } = await supabase.from('workspace_members').delete().eq('id', memberId);
-    if (deleteError) {
-      alert('Erro ao remover: ' + deleteError.message);
-      return;
-    }
-    if (workspaceId) await loadMembers(workspaceId);
+  function handleRemoveMember(memberId: string) {
+    setConfirmState({
+      message: 'Remover este membro? Ele perde o acesso ao workspace imediatamente.',
+      confirmLabel: 'Remover',
+      danger: true,
+      onConfirm: async () => {
+        const { error: deleteError } = await supabase.from('workspace_members').delete().eq('id', memberId);
+        if (deleteError) {
+          alert('Erro ao remover: ' + deleteError.message);
+          return;
+        }
+        if (workspaceId) await loadMembers(workspaceId);
+      },
+    });
   }
 
   function handleCopyCredential() {
@@ -708,44 +743,55 @@ export default function ConfiguracoesPage() {
     await loadConnections(workspaceId);
   }
 
-  async function handleDeleteConnection(id: string) {
-    if (!workspaceId || !confirm('Remover esta conexão?')) return;
+  function handleDeleteConnection(id: string) {
+    if (!workspaceId) return;
+    setConfirmState({
+      message: 'Remover esta conexão? O número precisa ser reconectado do zero (novo QR code) se quiser usá-lo de novo.',
+      confirmLabel: 'Remover',
+      danger: true,
+      onConfirm: async () => {
+        const res = await fetch('/api/whatsapp/connect', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId: id }),
+        });
 
-    const res = await fetch('/api/whatsapp/connect', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: id }),
+        if (!res.ok) {
+          const result = await res.json().catch(() => ({}));
+          alert('Erro ao remover: ' + (result.error || 'erro desconhecido'));
+          return;
+        }
+
+        if (pendingConnectionId === id) {
+          setPendingConnectionId(null);
+          setQrCode(null);
+        }
+        await loadConnections(workspaceId);
+      },
     });
-
-    if (!res.ok) {
-      const result = await res.json().catch(() => ({}));
-      alert('Erro ao remover: ' + (result.error || 'erro desconhecido'));
-      return;
-    }
-
-    if (pendingConnectionId === id) {
-      setPendingConnectionId(null);
-      setQrCode(null);
-    }
-    await loadConnections(workspaceId);
   }
 
-  async function handleDisconnectConnection(id: string) {
-    if (!workspaceId || !confirm('Desconectar este número? Você pode reconectar depois escaneando um novo QR code.')) return;
+  function handleDisconnectConnection(id: string) {
+    if (!workspaceId) return;
+    setConfirmState({
+      message: 'Desconectar este número? Você pode reconectar depois escaneando um novo QR code.',
+      confirmLabel: 'Desconectar',
+      onConfirm: async () => {
+        const res = await fetch('/api/whatsapp/connect', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ connectionId: id }),
+        });
 
-    const res = await fetch('/api/whatsapp/connect', {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ connectionId: id }),
+        if (!res.ok) {
+          const result = await res.json().catch(() => ({}));
+          alert('Erro ao desconectar: ' + (result.error || 'erro desconhecido'));
+          return;
+        }
+
+        await loadConnections(workspaceId);
+      },
     });
-
-    if (!res.ok) {
-      const result = await res.json().catch(() => ({}));
-      alert('Erro ao desconectar: ' + (result.error || 'erro desconhecido'));
-      return;
-    }
-
-    await loadConnections(workspaceId);
   }
 
   async function handleAddCredential(e: React.FormEvent) {
@@ -778,22 +824,27 @@ export default function ConfiguracoesPage() {
     }
   }
 
-  async function handleDeleteCredential(id: string) {
-    if (!confirm('Remover esta credencial?')) return;
+  function handleDeleteCredential(id: string) {
+    setConfirmState({
+      message: 'Remover esta credencial de IA?',
+      confirmLabel: 'Remover',
+      danger: true,
+      onConfirm: async () => {
+        const res = await fetch('/api/workspace/llm-credentials', {
+          method: 'DELETE',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ credentialId: id }),
+        });
 
-    const res = await fetch('/api/workspace/llm-credentials', {
-      method: 'DELETE',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ credentialId: id }),
+        if (!res.ok) {
+          const result = await res.json();
+          alert('Erro ao remover: ' + result.error);
+          return;
+        }
+
+        if (workspaceId) await loadCredentials(workspaceId);
+      },
     });
-
-    if (!res.ok) {
-      const result = await res.json();
-      alert('Erro ao remover: ' + result.error);
-      return;
-    }
-
-    if (workspaceId) await loadCredentials(workspaceId);
   }
 
   async function handleSetCredentialRole(id: string, role: 'primary' | 'fallback') {
@@ -2041,6 +2092,7 @@ export default function ConfiguracoesPage() {
       </div>
 
       {showApiKeyGuide && <ApiKeyGuideModal onClose={() => setShowApiKeyGuide(false)} />}
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

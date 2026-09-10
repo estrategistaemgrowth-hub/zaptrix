@@ -793,11 +793,35 @@ async function tryAutoReply({
 
     const wasNeedsReviewBefore = !!conversation.needs_review;
 
-    const { data: profile } = await admin
-      .from('ai_profiles')
-      .select('*')
-      .eq('workspace_id', workspaceId)
+    const { data: connection } = await admin
+      .from('whatsapp_connections')
+      .select('id, created_at, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
+      .eq('instance_name', instanceName)
       .maybeSingle();
+
+    // Agente de IA: primeiro tenta o configurado especificamente pra este
+    // número (Construtor de Agente, aba por conexão); sem um agente próprio,
+    // cai no agente padrão do workspace (whatsapp_connection_id NULL) — é o
+    // que cobre 100% dos workspaces com um número só, sem mudar nada pra eles.
+    const { data: connectionProfile } = connection?.id
+      ? await admin
+          .from('ai_profiles')
+          .select('*')
+          .eq('workspace_id', workspaceId)
+          .eq('whatsapp_connection_id', connection.id)
+          .maybeSingle()
+      : { data: null };
+
+    const { data: defaultProfile } = connectionProfile
+      ? { data: null }
+      : await admin
+          .from('ai_profiles')
+          .select('*')
+          .eq('workspace_id', workspaceId)
+          .is('whatsapp_connection_id', null)
+          .maybeSingle();
+
+    const profile = connectionProfile || defaultProfile;
 
     if (!profile || !profile.enabled) return;
 
@@ -816,12 +840,6 @@ async function tryAutoReply({
       console.warn(`Limite de respostas automáticas de IA por hora atingido — workspace ${workspaceId}`);
       return;
     }
-
-    const { data: connection } = await admin
-      .from('whatsapp_connections')
-      .select('id, created_at, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
-      .eq('instance_name', instanceName)
-      .maybeSingle();
 
     if (connection) {
       const effectiveDailyLimit = computeEffectiveDailyLimit(connection);

@@ -10,6 +10,7 @@ import { downloadCsv } from '@/lib/csv-export';
 import { ProductDetailModal } from '@/components/product-detail-modal';
 import { SkeletonCard, Skeleton } from '@/components/skeleton';
 import { Plus, Trash2, Tag, Upload, Download, FileSpreadsheet, X, Loader2, Search, SlidersHorizontal, ExternalLink, LayoutGrid, List, PackageSearch, FolderOpen, ChevronDown, Pencil, Check, ChevronLeft, ChevronRight } from 'lucide-react';
+import { ConfirmDialog, ConfirmState } from '@/components/confirm-dialog';
 
 interface Product {
   id: string;
@@ -42,6 +43,7 @@ export default function ProdutosPage() {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [workspaceId, setWorkspaceId] = useState<string | null>(null);
+  const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
   const [error, setError] = useState('');
   const [formData, setFormData] = useState({
     name: '',
@@ -201,21 +203,26 @@ export default function ProdutosPage() {
     setSelectedIds(new Set());
   }
 
-  async function handleBulkDelete() {
+  function handleBulkDelete() {
     if (selectedIds.size === 0 || !workspaceId) return;
-    if (!confirm(`Excluir ${selectedIds.size} produto(s) selecionado(s)? Essa ação não pode ser desfeita.`)) return;
+    setConfirmState({
+      message: `Excluir ${selectedIds.size} produto(s) selecionado(s)? Essa ação não pode ser desfeita.`,
+      confirmLabel: 'Excluir',
+      danger: true,
+      onConfirm: async () => {
+        setBulkActionSubmitting(true);
+        const { error: deleteError } = await supabase.from('products').delete().in('id', Array.from(selectedIds));
+        setBulkActionSubmitting(false);
 
-    setBulkActionSubmitting(true);
-    const { error: deleteError } = await supabase.from('products').delete().in('id', Array.from(selectedIds));
-    setBulkActionSubmitting(false);
+        if (deleteError) {
+          alert('Erro ao excluir produtos: ' + deleteError.message);
+          return;
+        }
 
-    if (deleteError) {
-      alert('Erro ao excluir produtos: ' + deleteError.message);
-      return;
-    }
-
-    exitSelectionMode();
-    await loadProducts(workspaceId);
+        exitSelectionMode();
+        if (workspaceId) await loadProducts(workspaceId);
+      },
+    });
   }
 
   async function handleBulkPriceAdjust() {
@@ -420,20 +427,21 @@ export default function ProdutosPage() {
     await Promise.all([loadCategories(workspaceId), loadProducts(workspaceId)]);
   }
 
-  async function handleDeleteCategory(id: string, name: string) {
-    if (
-      !workspaceId ||
-      !confirm(`Excluir a categoria "${name}"? Os produtos vinculados ficam sem categoria — nenhum produto é apagado.`)
-    ) {
-      return;
-    }
-
-    const { error: deleteError } = await supabase.from('categories').delete().eq('id', id);
-    if (deleteError) {
-      alert('Erro ao excluir categoria: ' + deleteError.message);
-      return;
-    }
-    await Promise.all([loadCategories(workspaceId), loadProducts(workspaceId)]);
+  function handleDeleteCategory(id: string, name: string) {
+    if (!workspaceId) return;
+    setConfirmState({
+      message: `Excluir a categoria "${name}"? Os produtos vinculados ficam sem categoria — nenhum produto é apagado.`,
+      confirmLabel: 'Excluir',
+      danger: true,
+      onConfirm: async () => {
+        const { error: deleteError } = await supabase.from('categories').delete().eq('id', id);
+        if (deleteError) {
+          alert('Erro ao excluir categoria: ' + deleteError.message);
+          return;
+        }
+        await Promise.all([loadCategories(workspaceId), loadProducts(workspaceId)]);
+      },
+    });
   }
 
   async function handleAddProduct(e: React.FormEvent) {
@@ -502,15 +510,21 @@ export default function ProdutosPage() {
     await loadProducts(workspaceId);
   }
 
-  async function handleDeleteProduct(id: string) {
-    if (!workspaceId || !confirm('Deletar este produto?')) return;
-
-    const { error: deleteError } = await supabase.from('products').delete().eq('id', id);
-    if (deleteError) {
-      alert('Erro ao deletar: ' + deleteError.message);
-      return;
-    }
-    await loadProducts(workspaceId);
+  function handleDeleteProduct(id: string) {
+    if (!workspaceId) return;
+    setConfirmState({
+      message: 'Deletar este produto?',
+      confirmLabel: 'Deletar',
+      danger: true,
+      onConfirm: async () => {
+        const { error: deleteError } = await supabase.from('products').delete().eq('id', id);
+        if (deleteError) {
+          alert('Erro ao deletar: ' + deleteError.message);
+          return;
+        }
+        await loadProducts(workspaceId);
+      },
+    });
   }
 
   async function handleFileSelected(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1856,6 +1870,7 @@ export default function ProdutosPage() {
           }}
         />
       )}
+      <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
     </div>
   );
 }

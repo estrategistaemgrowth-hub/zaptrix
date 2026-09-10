@@ -56,6 +56,20 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ status: newStatus });
   } catch (err) {
     console.error('Erro ao consultar status da instância:', err);
+
+    // Instância sumiu da Evolution API (conflito de sessão, servidor
+    // reiniciado, etc) — sem isso, o registro local fica preso pra sempre no
+    // último status conhecido (normalmente "Conectado"), mesmo que a conexão
+    // já não exista de verdade do outro lado.
+    const message = err instanceof Error ? err.message : String(err);
+    if (/404|does not exist|not found/i.test(message) && connection.status !== 'disconnected') {
+      await supabase
+        .from('whatsapp_connections')
+        .update({ status: 'disconnected' })
+        .eq('id', connectionId);
+      return NextResponse.json({ status: 'disconnected' });
+    }
+
     return NextResponse.json({ status: connection.status });
   }
 }

@@ -208,6 +208,11 @@ export default function AtendimentoPage() {
   >([]);
   const [connectionFilter, setConnectionFilter] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
+  // Só rola pro final quando o usuário já estava perto do final — sem isso,
+  // o poll de 2s (loadMessages) puxava a tela de volta pra baixo toda vez
+  // que alguém tentava subir o scroll pra ler o histórico.
+  const isAtBottomRef = useRef(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
 
@@ -262,6 +267,7 @@ export default function AtendimentoPage() {
 
   useEffect(() => {
     if (selectedConversation) {
+      isAtBottomRef.current = true;
       loadMessages(selectedConversation.id);
       const interval = setInterval(() => loadMessages(selectedConversation.id), 2000);
       return () => clearInterval(interval);
@@ -269,8 +275,16 @@ export default function AtendimentoPage() {
   }, [selectedConversation?.id]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (isAtBottomRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
+
+  function handleMessagesScroll() {
+    const el = messagesContainerRef.current;
+    if (!el) return;
+    isAtBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < 150;
+  }
 
   async function init() {
     try {
@@ -1171,7 +1185,11 @@ export default function AtendimentoPage() {
 
 
               {/* Mensagens */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-4 bg-card">
+              <div
+                ref={messagesContainerRef}
+                onScroll={handleMessagesScroll}
+                className="flex-1 overflow-y-auto p-6 space-y-4 bg-card"
+              >
                 {messages.length === 0 ? (
                   <div className="h-full flex flex-col items-center justify-center text-center text-muted-foreground">
                     <MessagesSquare className="w-16 h-16 text-muted-foreground/40 mb-3" />

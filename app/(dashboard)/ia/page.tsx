@@ -191,6 +191,14 @@ export default function IaPage() {
   const [saved, setSaved] = useState(false);
   const [formData, setFormData] = useState(emptyForm);
   const [appliedTemplate, setAppliedTemplate] = useState<string | null>(null);
+  /** Só relevante pra workspace com mais de 1 número — cada conexão pode ter
+   *  seu próprio agente (Construtor de Agente por aba). null = agente
+   *  padrão do workspace, usado quando só existe 1 número. */
+  const [connections, setConnections] = useState<
+    { id: string; phone_number: string | null; instance_name: string }[]
+  >([]);
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
+  const [configuredConnectionIds, setConfiguredConnectionIds] = useState<Set<string>>(new Set());
   const supabase = createClient();
 
   function applyTemplate(template: AgentTemplate) {
@@ -239,39 +247,114 @@ export default function IaPage() {
 
       setWorkspaceId(workspace.workspaceId);
 
-      const { data, error: loadError } = await supabase
-        .from('ai_profiles')
-        .select('*')
-        .eq('workspace_id', workspace.workspaceId)
-        .maybeSingle();
+      const [{ data: connectionRows }, { data: allProfiles }] = await Promise.all([
+        supabase
+          .from('whatsapp_connections')
+          .select('id, phone_number, instance_name')
+          .eq('workspace_id', workspace.workspaceId)
+          .order('created_at', { ascending: true }),
+        supabase
+          .from('ai_profiles')
+          .select('whatsapp_connection_id')
+          .eq('workspace_id', workspace.workspaceId),
+      ]);
 
-      if (loadError) {
-        setError('Erro ao carregar perfil de IA: ' + loadError.message);
-      } else if (data) {
-        setProfile(data);
-        setFormData({
-          agent_name: data.agent_name || '',
-          company_name: data.company_name || '',
-          objective: data.objective || '',
-          persona: data.persona || '',
-          tone: data.tone || 'amigavel',
-          custom_tone: data.custom_tone || '',
-          response_style: data.response_style || 'conciso',
-          allowed_topics: data.allowed_topics || '',
-          forbidden_topics: data.forbidden_topics || '',
-          business_rules: data.business_rules || '',
-          enabled: data.enabled,
-          use_knowledge_base: data.use_knowledge_base ?? true,
-          business_hours_enabled: data.business_hours_enabled ?? false,
-          business_hours: data.business_hours || defaultBusinessHours,
-          out_of_hours_message: data.out_of_hours_message || defaultOutOfHoursMessage,
-        });
-      }
+      const conns = connectionRows || [];
+      setConnections(conns);
+      setConfiguredConnectionIds(
+        new Set((allProfiles || []).map((p) => p.whatsapp_connection_id).filter(Boolean) as string[])
+      );
+
+      // Só faz sentido escolher "qual número" quando há mais de 1 conexão —
+      // com 1 número só, sempre usa o agente padrão (whatsapp_connection_id
+      // NULL), sem nenhuma aba visível.
+      const initialConnectionId = conns.length > 1 ? conns[0].id : null;
+      setActiveConnectionId(initialConnectionId);
+      await loadProfile(workspace.workspaceId, initialConnectionId);
     } catch (err) {
       console.error('Erro ao carregar perfil:', err);
     } finally {
       setLoading(false);
     }
+  }
+
+  async function loadProfile(wsId: string, connectionId: string | null) {
+    const baseQuery = supabase.from('ai_profiles').select('*').eq('workspace_id', wsId);
+    const { data, error: loadError } = await (
+      connectionId ? baseQuery.eq('whatsapp_connection_id', connectionId) : baseQuery.is('whatsapp_connection_id', null)
+    ).maybeSingle();
+
+    if (loadError) {
+      setError('Erro ao carregar perfil de IA: ' + loadError.message);
+      return;
+    }
+
+    if (data) {
+      setProfile(data);
+      setFormData({
+        agent_name: data.agent_name || '',
+        company_name: data.company_name || '',
+        objective: data.objective || '',
+        persona: data.persona || '',
+        tone: data.tone || 'amigavel',
+        custom_tone: data.custom_tone || '',
+        response_style: data.response_style || 'conciso',
+        allowed_topics: data.allowed_topics || '',
+        forbidden_topics: data.forbidden_topics || '',
+        business_rules: data.business_rules || '',
+        enabled: data.enabled,
+        use_knowledge_base: data.use_knowledge_base ?? true,
+        business_hours_enabled: data.business_hours_enabled ?? false,
+        business_hours: data.business_hours || defaultBusinessHours,
+        out_of_hours_message: data.out_of_hours_message || defaultOutOfHoursMessage,
+      });
+      return;
+    }
+
+    // Número sem agente próprio ainda: herda os valores do agente padrão do
+    // workspace como ponto de partida — evita começar do zero toda vez que
+    // um número novo é conectado. Continua sem "profile" (insert, não
+    // update): salvar aqui cria uma linha nova vinculada a este número.
+    setProfile(null);
+    if (connectionId) {
+      const { data: defaultData } = await supabase
+        .from('ai_profiles')
+        .select('*')
+        .eq('workspace_id', wsId)
+        .is('whatsapp_connection_id', null)
+        .maybeSingle();
+
+      if (defaultData) {
+        setFormData({
+          agent_name: defaultData.agent_name || '',
+          company_name: defaultData.company_name || '',
+          objective: defaultData.objective || '',
+          persona: defaultData.persona || '',
+          tone: defaultData.tone || 'amigavel',
+          custom_tone: defaultData.custom_tone || '',
+          response_style: defaultData.response_style || 'conciso',
+          allowed_topics: defaultData.allowed_topics || '',
+          forbidden_topics: defaultData.forbidden_topics || '',
+          business_rules: defaultData.business_rules || '',
+          enabled: defaultData.enabled,
+          use_knowledge_base: defaultData.use_knowledge_base ?? true,
+          business_hours_enabled: defaultData.business_hours_enabled ?? false,
+          business_hours: defaultData.business_hours || defaultBusinessHours,
+          out_of_hours_message: defaultData.out_of_hours_message || defaultOutOfHoursMessage,
+        });
+        return;
+      }
+    }
+    setFormData(emptyForm);
+  }
+
+  async function handleSelectConnectionTab(connectionId: string | null) {
+    if (!workspaceId || connectionId === activeConnectionId) return;
+    setActiveConnectionId(connectionId);
+    setAppliedTemplate(null);
+    setSaved(false);
+    setError('');
+    await loadProfile(workspaceId, connectionId);
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -282,7 +365,7 @@ export default function IaPage() {
     setError('');
     setSaved(false);
 
-    const payload = { workspace_id: workspaceId, ...formData };
+    const payload = { workspace_id: workspaceId, whatsapp_connection_id: activeConnectionId, ...formData };
 
     const { error: saveError } = profile
       ? await supabase.from('ai_profiles').update(payload).eq('id', profile.id)
@@ -297,7 +380,10 @@ export default function IaPage() {
 
     setSaved(true);
     setSaving(false);
-    await init();
+    if (activeConnectionId) {
+      setConfiguredConnectionIds((prev) => new Set(prev).add(activeConnectionId));
+    }
+    await loadProfile(workspaceId, activeConnectionId);
   }
 
   if (loading) {
@@ -321,7 +407,7 @@ export default function IaPage() {
               <Zap className="w-5 h-5 text-white" fill="currentColor" />
             </div>
             <div>
-              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Configuração da IA</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Construtor de Agente</h1>
               <p className="text-muted-foreground">Personalize seu agente de atendimento</p>
             </div>
           </div>
@@ -342,6 +428,42 @@ export default function IaPage() {
             {formData.enabled ? 'IA ativa' : 'IA desativada'}
           </button>
         </div>
+
+        {connections.length > 1 && (
+          <div className="mb-6">
+            <p className="text-sm text-muted-foreground mb-2">
+              Seu workspace tem {connections.length} números de WhatsApp — configure um agente diferente
+              para cada um. Número sem agente próprio usa o agente do primeiro número como ponto de partida.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {connections.map((conn) => {
+                const label = conn.phone_number ? `+${conn.phone_number}` : conn.instance_name;
+                const isActive = activeConnectionId === conn.id;
+                const isConfigured = configuredConnectionIds.has(conn.id);
+                return (
+                  <button
+                    key={conn.id}
+                    type="button"
+                    onClick={() => handleSelectConnectionTab(conn.id)}
+                    className={`flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-medium border transition-colors duration-150 ${
+                      isActive
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-card text-foreground border-border hover:bg-muted'
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                        isConfigured ? (isActive ? 'bg-white' : 'bg-success') : 'bg-muted-foreground/40'
+                      }`}
+                      title={isConfigured ? 'Agente próprio configurado' : 'Ainda sem agente próprio'}
+                    />
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">

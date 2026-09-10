@@ -184,14 +184,14 @@ function SignupForm() {
                     <span className="text-xs font-normal text-muted-foreground">/mês</span>
                   </p>
                   <div className="mt-3 space-y-1.5">
-                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Package className="w-3 h-3 flex-shrink-0" /> até {plan.product_limit} produtos
+                    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Package className="w-3 h-3 flex-shrink-0 mt-0.5" /> até {plan.product_limit} produtos
                     </p>
-                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Users className="w-3 h-3 flex-shrink-0" /> até {plan.member_limit} usuários/atendentes
+                    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Users className="w-3 h-3 flex-shrink-0 mt-0.5" /> até {plan.member_limit} usuários/atendentes
                     </p>
-                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Smartphone className="w-3 h-3 flex-shrink-0" /> 1 número de WhatsApp incluso
+                    <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                      <Smartphone className="w-3 h-3 flex-shrink-0 mt-0.5" /> 1 WhatsApp incluso
                     </p>
                   </div>
                 </button>

@@ -7,6 +7,9 @@ function generateWebhookSecret() {
 }
 
 export async function POST(request: NextRequest) {
+  const body = await request.json().catch(() => ({}));
+  const targetConnectionId: string | undefined = body?.connectionId;
+
   const supabase = await createServerClient();
   const {
     data: { user },
@@ -27,18 +30,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
   }
 
-  // Uma conexão "desconectada" (logout, ou sessão que caiu na Evolution API)
-  // não deveria ocupar vaga nenhuma nem impedir reconectar o mesmo número —
-  // reaproveita a linha em vez de inserir outra e acumular registros órfãos.
-  const { data: existingConnections } = await supabase
-    .from('whatsapp_connections')
-    .select('id, status')
-    .eq('workspace_id', membership.workspace_id);
+  // "+ Conectar WhatsApp" cria uma instância NOVA — conta contra o limite do
+  // plano (linhas existentes, qualquer status, porque cada linha já é uma
+  // instância contratada). Reconectar uma instância específica (botão
+  // "Conectar" da própria linha, connectionId informado) nunca é bloqueado
+  // pelo limite: a vaga já era dela.
+  let targetConnection: { id: string; instance_name: string } | null = null;
 
-  const disconnectedRow = (existingConnections || []).find((c) => c.status === 'disconnected');
-  const activeCount = (existingConnections || []).filter((c) => c.status !== 'disconnected').length;
+  if (targetConnectionId) {
+    const { data: existing } = await supabase
+      .from('whatsapp_connections')
+      .select('id, instance_name')
+      .eq('id', targetConnectionId)
+      .eq('workspace_id', membership.workspace_id)
+      .maybeSingle();
 
-  if (!disconnectedRow) {
+    if (!existing) {
+      return NextResponse.json({ error: 'Conexão não encontrada' }, { status: 404 });
+    }
+    targetConnection = existing;
+  } else {
+    const { data: existingConnections } = await supabase
+      .from('whatsapp_connections')
+      .select('id', { count: 'exact', head: false })
+      .eq('workspace_id', membership.workspace_id);
+
     const { data: workspace } = await supabase
       .from('workspaces')
       .select('extra_whatsapp_connections')
@@ -46,10 +62,10 @@ export async function POST(request: NextRequest) {
       .maybeSingle();
 
     const limit = 1 + (workspace?.extra_whatsapp_connections || 0);
-    if (activeCount >= limit) {
+    if ((existingConnections || []).length >= limit) {
       return NextResponse.json(
         {
-          error: 'Limite de números atingido — contrate uma instância adicional para conectar mais um número.',
+          error: 'Limite de instâncias atingido — contrate uma adicional para criar mais uma.',
           limitReached: true,
         },
         { status: 403 }
@@ -71,11 +87,11 @@ export async function POST(request: NextRequest) {
       console.error('Erro ao configurar webhook:', webhookErr);
     }
 
-    const { data: connection, error: saveError } = disconnectedRow
+    const { data: connection, error: saveError } = targetConnection
       ? await supabase
           .from('whatsapp_connections')
           .update({ instance_name: instanceName, status: 'connecting', webhook_secret: webhookSecret })
-          .eq('id', disconnectedRow.id)
+          .eq('id', targetConnection.id)
           .select('id')
           .single()
       : await supabase

@@ -103,6 +103,7 @@ interface WorkspaceBilling {
   subscription_expires_at: string | null;
   is_complimentary: boolean;
   extra_whatsapp_connections: number;
+  cpf_cnpj: string | null;
   plan: PlanInfo | null;
 }
 
@@ -306,7 +307,7 @@ export default function ConfiguracoesPage() {
         supabase
           .from('workspaces')
           .select(
-            'plan_id, subscription_status, subscription_expires_at, is_complimentary, extra_whatsapp_connections, plans(id, name, price_cents, product_limit, member_limit)'
+            'plan_id, subscription_status, subscription_expires_at, is_complimentary, extra_whatsapp_connections, cpf_cnpj, plans(id, name, price_cents, product_limit, member_limit)'
           )
           .eq('id', wsId)
           .maybeSingle(),
@@ -329,6 +330,7 @@ export default function ConfiguracoesPage() {
         subscription_expires_at: wsData.subscription_expires_at,
         is_complimentary: wsData.is_complimentary,
         extra_whatsapp_connections: wsData.extra_whatsapp_connections,
+        cpf_cnpj: wsData.cpf_cnpj,
         plan,
       });
     }
@@ -345,6 +347,15 @@ export default function ConfiguracoesPage() {
     setPlanPickerResult(result);
     setShowPlanPicker(false);
     if (workspaceId) loadBilling(workspaceId);
+  }
+
+  /** Abre o modal de compra de instância de qualquer lugar da tela (WhatsApp,
+   *  Minha Assinatura, modal de limite atingido) — pré-preenche o CPF/CNPJ já
+   *  cadastrado no workspace, se houver, pra não pedir de novo toda vez. */
+  function openBuyInstanceModal() {
+    setBuyInstanceCpfCnpj(workspaceBilling?.cpf_cnpj || '');
+    setBuyInstanceError('');
+    setShowBuyInstance(true);
   }
 
   async function handleBuyInstance() {
@@ -681,13 +692,21 @@ export default function ConfiguracoesPage() {
     });
   }
 
-  async function handleConnectWhatsapp() {
+  /** Sem connectionId: cria uma instância nova ("+ Conectar WhatsApp", conta
+   *  contra o limite do plano). Com connectionId: reconecta uma instância já
+   *  existente e desconectada (botão "Conectar" da própria linha) — nunca
+   *  bloqueia por limite, porque a vaga já era dela. */
+  async function handleConnectWhatsapp(connectionId?: string) {
     setConnecting(true);
     setError('');
     setQrCode(null);
 
     try {
-      const res = await fetch('/api/whatsapp/connect', { method: 'POST' });
+      const res = await fetch('/api/whatsapp/connect', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(connectionId ? { connectionId } : {}),
+      });
       const result = await res.json();
 
       if (!res.ok) {
@@ -870,9 +889,6 @@ export default function ConfiguracoesPage() {
   }
 
   const attendantCount = members.filter((m) => m.role === 'atendente' || m.role === 'admin').length;
-  // Conexão desconectada não ocupa vaga do limite de números — só conta o
-  // que está de fato ativo/conectando (mesmo critério do backend).
-  const activeConnectionsCount = connections.filter((c) => c.status !== 'disconnected').length;
 
   return (
     <div className="p-2">
@@ -1328,92 +1344,14 @@ export default function ConfiguracoesPage() {
                     — R$ 39,90/mês cada, além do número incluso no plano
                   </p>
                 </div>
-                {!showBuyInstance && (
-                  <button
-                    type="button"
-                    onClick={() => setShowBuyInstance(true)}
-                    className="px-4 py-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg hover:bg-primary/5 flex-shrink-0"
-                  >
-                    Comprar instância adicional
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={openBuyInstanceModal}
+                  className="px-4 py-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg hover:bg-primary/5 flex-shrink-0"
+                >
+                  Comprar instância adicional
+                </button>
               </div>
-
-              {buyInstanceResult ? (
-                <div className="mt-4 pt-4 border-t border-border text-center space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    {buyInstanceResult.warning || 'Cobrança gerada! Escaneie o QR code para pagar com PIX.'}
-                  </p>
-                  {buyInstanceResult.pixQrCode && (
-                    <div className="flex justify-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`data:image/png;base64,${buyInstanceResult.pixQrCode}`}
-                        alt="QR Code PIX"
-                        className="w-40 h-40"
-                      />
-                    </div>
-                  )}
-                  {buyInstanceResult.paymentUrl && (
-                    <a
-                      href={buyInstanceResult.paymentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block w-full text-center btn-gradient font-medium py-2.5"
-                    >
-                      Pagar com PIX
-                    </a>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    A instância extra é liberada automaticamente assim que o pagamento for confirmado.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setBuyInstanceResult(null)}
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    Fechar
-                  </button>
-                </div>
-              ) : (
-                showBuyInstance && (
-                  <div className="mt-4 pt-4 border-t border-border space-y-3">
-                    {buyInstanceError && (
-                      <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                        {buyInstanceError}
-                      </div>
-                    )}
-                    <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">CPF/CNPJ</label>
-                      <input
-                        type="text"
-                        value={buyInstanceCpfCnpj}
-                        onChange={(e) => setBuyInstanceCpfCnpj(e.target.value)}
-                        placeholder="Necessário para gerar a cobrança PIX"
-                        className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
-                      />
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={handleBuyInstance}
-                        disabled={buyInstanceSubmitting}
-                        className="flex-1 flex items-center justify-center gap-2 btn-gradient font-medium py-2.5 disabled:opacity-50"
-                      >
-                        {buyInstanceSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                        {buyInstanceSubmitting ? 'Gerando cobrança...' : 'Gerar cobrança PIX (R$ 39,90/mês)'}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowBuyInstance(false)}
-                        className="px-4 py-2.5 border border-border text-foreground rounded-xl font-medium hover:bg-background"
-                      >
-                        Cancelar
-                      </button>
-                    </div>
-                  </div>
-                )
-              )}
             </div>
           )}
 
@@ -1526,8 +1464,16 @@ export default function ConfiguracoesPage() {
             </div>
             {!qrCode && (
               <button
-                onClick={handleConnectWhatsapp}
-                disabled={connecting}
+                onClick={() => handleConnectWhatsapp()}
+                disabled={
+                  connecting ||
+                  (workspaceBilling ? connections.length >= 1 + workspaceBilling.extra_whatsapp_connections : false)
+                }
+                title={
+                  workspaceBilling && connections.length >= 1 + workspaceBilling.extra_whatsapp_connections
+                    ? 'Limite de instâncias atingido — contrate uma adicional para criar mais uma'
+                    : undefined
+                }
                 className="flex items-center gap-2 px-4 py-2 btn-gradient text-sm font-medium disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
@@ -1539,17 +1485,14 @@ export default function ConfiguracoesPage() {
           {workspaceBilling && (
             <p className="text-xs text-muted-foreground mb-5 flex flex-wrap items-center gap-x-1.5 gap-y-1">
               <span>
-                {activeConnectionsCount} de {1 + workspaceBilling.extra_whatsapp_connections} número(s) conectado(s)
+                {connections.length} de {1 + workspaceBilling.extra_whatsapp_connections} instância(s) utilizada(s)
               </span>
               {!workspaceBilling.is_complimentary && (
                 <>
                   <span>·</span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setActiveSection('assinatura');
-                      setShowBuyInstance(true);
-                    }}
+                    onClick={openBuyInstanceModal}
                     className="text-primary hover:underline font-medium"
                   >
                     Precisa de mais um número? Contratar instância adicional (R$ 39,90/mês)
@@ -1625,7 +1568,7 @@ export default function ConfiguracoesPage() {
                     ) : null}
                   </div>
                   <div className="flex items-center gap-1 flex-shrink-0">
-                    {conn.status === 'connected' && (
+                    {conn.status === 'connected' ? (
                       <button
                         onClick={() => handleDisconnectConnection(conn.id)}
                         className="p-2 text-muted-foreground hover:text-amber-600 hover:bg-amber-50 rounded-lg"
@@ -1633,7 +1576,17 @@ export default function ConfiguracoesPage() {
                       >
                         <PowerOff className="w-4 h-4" />
                       </button>
-                    )}
+                    ) : conn.status !== 'connecting' ? (
+                      <button
+                        onClick={() => handleConnectWhatsapp(conn.id)}
+                        disabled={connecting}
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-primary border border-primary/30 rounded-lg hover:bg-primary/5 disabled:opacity-50"
+                        title="Reconectar esta instância"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        Conectar
+                      </button>
+                    ) : null}
                     <button
                       onClick={() => openEditConnection(conn)}
                       className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg"
@@ -2131,8 +2084,7 @@ export default function ConfiguracoesPage() {
                   type="button"
                   onClick={() => {
                     setShowConnectionLimitModal(false);
-                    setActiveSection('assinatura');
-                    setShowBuyInstance(true);
+                    openBuyInstanceModal();
                   }}
                   className="btn-gradient font-medium py-2.5"
                 >
@@ -2146,6 +2098,95 @@ export default function ConfiguracoesPage() {
                   Agora não
                 </button>
               </div>
+            </div>
+          </div>,
+          document.body
+        )}
+
+      {(showBuyInstance || buyInstanceResult) &&
+        createPortal(
+          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-backdrop-in">
+            <div className="bg-card rounded-2xl shadow-lg w-full max-w-sm p-6 animate-modal-in">
+              <h3 className="text-lg font-semibold text-foreground mb-1">Instância adicional de WhatsApp</h3>
+              <p className="text-sm text-muted-foreground mb-5">
+                R$ 39,90/mês, cobrado a cada 30 dias via PIX enquanto a instância estiver ativa.
+              </p>
+
+              {buyInstanceResult ? (
+                <div className="text-center space-y-3">
+                  <p className="text-sm text-muted-foreground">
+                    {buyInstanceResult.warning || 'Cobrança gerada! Escaneie o QR code para pagar com PIX.'}
+                  </p>
+                  {buyInstanceResult.pixQrCode && (
+                    <div className="flex justify-center">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={`data:image/png;base64,${buyInstanceResult.pixQrCode}`}
+                        alt="QR Code PIX"
+                        className="w-40 h-40"
+                      />
+                    </div>
+                  )}
+                  {buyInstanceResult.paymentUrl && (
+                    <a
+                      href={buyInstanceResult.paymentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full text-center btn-gradient font-medium py-2.5"
+                    >
+                      Pagar com PIX
+                    </a>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    A instância extra é liberada automaticamente assim que o pagamento for confirmado — a
+                    próxima cobrança acontece em 30 dias, também por PIX.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setBuyInstanceResult(null)}
+                    className="text-sm text-muted-foreground hover:text-foreground"
+                  >
+                    Fechar
+                  </button>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {buyInstanceError && (
+                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+                      {buyInstanceError}
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-sm font-medium text-foreground mb-2">CPF/CNPJ</label>
+                    <input
+                      type="text"
+                      value={buyInstanceCpfCnpj}
+                      onChange={(e) => setBuyInstanceCpfCnpj(e.target.value)}
+                      placeholder="Necessário para gerar a cobrança PIX"
+                      autoFocus
+                      className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      onClick={handleBuyInstance}
+                      disabled={buyInstanceSubmitting}
+                      className="flex-1 flex items-center justify-center gap-2 btn-gradient font-medium py-2.5 disabled:opacity-50"
+                    >
+                      {buyInstanceSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+                      {buyInstanceSubmitting ? 'Gerando cobrança...' : 'Gerar cobrança PIX'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowBuyInstance(false)}
+                      className="px-4 py-2.5 border border-border text-foreground rounded-xl font-medium hover:bg-background"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>,
           document.body

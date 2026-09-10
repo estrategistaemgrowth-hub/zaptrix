@@ -181,12 +181,19 @@ function SignupForm() {
                     <button
                       type="button"
                       onClick={() => setSelectedPlanId(plan.id)}
-                      className={`w-full h-full p-4 rounded-2xl border bg-card text-left transition-all duration-200 ${
+                      className={`relative isolate w-full h-full p-4 rounded-2xl border bg-card text-left transition-all duration-200 ${
                         selectedPlanId === plan.id
                           ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                           : 'border-border hover:border-primary/40'
                       }`}
                     >
+                      {isRecommended && (
+                        // Máscara opaca própria: o fundo "selecionado" (bg-primary/5)
+                        // é translúcido de propósito, e sem isso o anel giratório do
+                        // wrapper (fora do card) vazava por trás dele quando o plano
+                        // Profissional era selecionado.
+                        <span aria-hidden="true" className="absolute inset-0 -z-10 rounded-2xl bg-card" />
+                      )}
                       <div className="flex items-center justify-between mb-1">
                         <p className="font-semibold text-foreground text-sm">{plan.name}</p>
                         {selectedPlanId === plan.id && <Check className="w-4 h-4 text-primary flex-shrink-0" />}

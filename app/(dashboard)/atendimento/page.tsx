@@ -898,7 +898,11 @@ export default function AtendimentoPage() {
           </div>
         </div>
         ) : (
-        <div className="flex-1 flex gap-4 overflow-x-auto overflow-y-hidden">
+        <div
+          className={`flex-1 gap-4 overflow-x-auto overflow-y-hidden ${
+            selectedConversation ? 'hidden md:flex' : 'flex'
+          }`}
+        >
           {KANBAN_COLUMNS.map((col) => {
             const columnConversations = visibleConversations.filter((c) => c.status === col.status);
             const otherColumns = KANBAN_COLUMNS.filter((c) => c.status !== col.status);
@@ -1102,23 +1106,21 @@ export default function AtendimentoPage() {
         {/* Chat */}
         <div
           className={`bg-card border border-border rounded-2xl shadow-sm flex-col overflow-hidden ${
-            viewMode === 'list' && !selectedConversation ? 'hidden md:flex' : 'flex'
-          } ${viewMode === 'kanban' ? 'w-96 flex-shrink-0' : 'w-full flex-1'}`}
+            !selectedConversation ? 'hidden md:flex' : 'flex'
+          } ${viewMode === 'kanban' ? 'w-full md:w-96 md:flex-shrink-0' : 'w-full flex-1'}`}
         >
           {selectedConversation ? (
             <>
               {/* Header */}
               <div className="p-6 border-b border-border bg-muted flex justify-between items-center gap-3">
                 <div className="flex items-center gap-2 min-w-0">
-                  {viewMode === 'list' && (
-                    <button
-                      onClick={() => setSelectedConversation(null)}
-                      title="Voltar pra lista"
-                      className="md:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground flex-shrink-0"
-                    >
-                      <ChevronLeft className="w-5 h-5" />
-                    </button>
-                  )}
+                  <button
+                    onClick={() => setSelectedConversation(null)}
+                    title={viewMode === 'list' ? 'Voltar pra lista' : 'Voltar pro kanban'}
+                    className="md:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground flex-shrink-0"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
                   <div className="min-w-0">
                     <h2 className="text-xl font-bold text-foreground truncate">
                       {contactLabel(selectedConversation.contact)}

@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Check, Loader2, Package, Users, ArrowLeft, Smartphone } from 'lucide-react';
+import { Check, Loader2, Package, Users, ArrowLeft, Smartphone, Minus, Plus } from 'lucide-react';
 
 interface Plan {
   id: string;
@@ -17,6 +17,8 @@ interface Plan {
 function formatCents(cents: number): string {
   return (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 }
+
+const EXTRA_INSTANCE_PRICE_CENTS = 3990;
 
 const STEPS = ['Escolha o plano', 'Seus dados', 'Pagamento'];
 
@@ -54,6 +56,7 @@ function SignupForm() {
   const [step, setStep] = useState(isTrial ? 1 : 0);
   const [plans, setPlans] = useState<Plan[]>([]);
   const [selectedPlanId, setSelectedPlanId] = useState('');
+  const [extraInstances, setExtraInstances] = useState(0);
   const [storeName, setStoreName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,6 +81,7 @@ function SignupForm() {
   }, []);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const totalMonthlyCents = (selectedPlan?.price_cents || 0) + extraInstances * EXTRA_INSTANCE_PRICE_CENTS;
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,6 +99,7 @@ function SignupForm() {
           cpfCnpj: cpfCnpj || undefined,
           planId: isTrial ? undefined : selectedPlanId,
           isTrial,
+          extraInstances: isTrial ? 0 : extraInstances,
         }),
       });
 
@@ -164,7 +169,7 @@ function SignupForm() {
                   key={plan.id}
                   type="button"
                   onClick={() => setSelectedPlanId(plan.id)}
-                  className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+                  className={`p-4 rounded-2xl border text-left transition-all duration-200 ${
                     selectedPlanId === plan.id
                       ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                       : 'border-border hover:border-primary/40'
@@ -193,10 +198,44 @@ function SignupForm() {
               ))}
             </div>
 
+            <div className="p-3 rounded-2xl border border-border bg-muted/50 flex items-center justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-foreground">Instâncias adicionais de WhatsApp</p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  Uma instância é 1 número de WhatsApp conectado ao Zaptrix. O plano já inclui 1 — adicione
+                  mais só se atender por outros números (ex: vendas e suporte separados).
+                </p>
+              </div>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setExtraInstances((n) => Math.max(0, n - 1))}
+                  disabled={extraInstances === 0}
+                  className="w-8 h-8 flex items-center justify-center border border-border rounded-lg text-foreground hover:bg-white disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <Minus className="w-3.5 h-3.5" />
+                </button>
+                <span className="w-5 text-center text-sm font-semibold text-foreground">{extraInstances}</span>
+                <button
+                  type="button"
+                  onClick={() => setExtraInstances((n) => n + 1)}
+                  className="w-8 h-8 flex items-center justify-center border border-border rounded-lg text-foreground hover:bg-white"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+            {extraInstances > 0 && (
+              <p className="text-xs text-muted-foreground px-1">
+                + {formatCents(extraInstances * EXTRA_INSTANCE_PRICE_CENTS)}/mês ({extraInstances}{' '}
+                instância{extraInstances > 1 ? 's' : ''} adicional{extraInstances > 1 ? 'is' : ''}) — total{' '}
+                <strong className="text-foreground font-semibold">{formatCents(totalMonthlyCents)}/mês</strong>
+              </p>
+            )}
+
             <ul className="text-xs text-muted-foreground space-y-1 px-1">
               <li>• Atendimento via WhatsApp com IA, respondendo seus clientes automaticamente</li>
               <li>• Catálogo de produtos, base de conhecimento e Kanban de vendas</li>
-              <li>• Precisa de mais de 1 número? Contrate instâncias adicionais por R$ 39,90/mês cada</li>
               <li>• Cancele quando quiser — sem fidelidade</li>
             </ul>
 
@@ -215,15 +254,24 @@ function SignupForm() {
         {step === 1 && (
           <form onSubmit={handleSubmit} className="space-y-4">
             {!isTrial && selectedPlan && (
-              <div className="flex items-center justify-between p-3 bg-primary/5 border border-primary/20 rounded-xl mb-2">
-                <div>
-                  <p className="text-xs text-muted-foreground">Plano escolhido</p>
-                  <p className="text-sm font-semibold text-foreground">{selectedPlan.name}</p>
+              <div className="p-3 bg-primary/5 border border-primary/20 rounded-2xl mb-2">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Plano escolhido</p>
+                    <p className="text-sm font-semibold text-foreground">{selectedPlan.name}</p>
+                  </div>
+                  <p className="text-sm font-bold text-primary">
+                    {formatCents(totalMonthlyCents)}
+                    <span className="text-xs font-normal text-muted-foreground">/mês</span>
+                  </p>
                 </div>
-                <p className="text-sm font-bold text-primary">
-                  {formatCents(selectedPlan.price_cents)}
-                  <span className="text-xs font-normal text-muted-foreground">/mês</span>
-                </p>
+                {extraInstances > 0 && (
+                  <p className="text-xs text-muted-foreground mt-1.5 pt-1.5 border-t border-primary/10">
+                    Inclui {extraInstances} instância{extraInstances > 1 ? 's' : ''} adicional
+                    {extraInstances > 1 ? 'is' : ''} de WhatsApp ({formatCents(EXTRA_INSTANCE_PRICE_CENTS)}/mês
+                    cada)
+                  </p>
+                )}
               </div>
             )}
 

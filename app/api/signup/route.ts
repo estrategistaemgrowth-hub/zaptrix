@@ -4,6 +4,8 @@ import { isAsaasConfigured, createAsaasCustomer, createAsaasPayment, getAsaasPix
 import { translateAuthError } from '@/lib/auth-errors';
 import { checkRateLimit, getClientIp } from '@/lib/rate-limit';
 
+const EXTRA_INSTANCE_PRICE_CENTS = 3990;
+
 /**
  * Cadastro público de lojista — usado pelo link de assinatura ("/assinar")
  * e pelo link de teste grátis ("/assinar?trial=1"). Sem autenticação prévia
@@ -29,7 +31,7 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  const { storeName, email, password, cpfCnpj, planId, isTrial } = await request.json();
+  const { storeName, email, password, cpfCnpj, planId, isTrial, extraInstances } = await request.json();
 
   if (!storeName || !email || !password) {
     return NextResponse.json({ error: 'Dados inválidos' }, { status: 400 });
@@ -38,6 +40,10 @@ export async function POST(request: NextRequest) {
   if (!isTrial && !planId) {
     return NextResponse.json({ error: 'Selecione um plano' }, { status: 400 });
   }
+
+  // Instâncias extras só fazem sentido na assinatura paga — teste grátis
+  // sempre começa com o número único incluso.
+  const extraInstancesCount = isTrial ? 0 : Math.max(0, Math.min(50, parseInt(extraInstances, 10) || 0));
 
   const admin = createAdminClient();
 

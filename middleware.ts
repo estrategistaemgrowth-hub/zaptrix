@@ -94,7 +94,7 @@ export async function middleware(request: NextRequest) {
 
   const { data: workspace } = await supabase
     .from('workspaces')
-    .select('status, subscription_expires_at, is_complimentary')
+    .select('status, subscription_status, subscription_expires_at, is_complimentary')
     .eq('id', membership.workspace_id)
     .maybeSingle();
 
@@ -102,9 +102,19 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/workspace-suspended', request.url));
   }
 
-  // Assinatura vencida (teste grátis acabou, ou pagamento não confirmado/
-  // lapsou) bloqueia o acesso até o pagamento cair — workspaces sem data de
-  // vencimento definida (ex: criados manualmente sem plano) nunca bloqueiam
+  // "overdue" = cadastro pago cuja 1ª cobrança nunca foi confirmada (ou
+  // assinatura que atrasou depois) — bloqueia na hora, independente da data
+  // de vencimento. Sem essa checagem, subscription_expires_at sozinho não
+  // bloqueava: o signup grava vencimento 30 dias à frente já na criação
+  // (pra já existir uma data quando o pagamento confirmar), então um cadastro
+  // pago que nunca pagou tinha acesso livre por 30 dias.
+  if (!workspace.is_complimentary && workspace.subscription_status === 'overdue') {
+    return NextResponse.redirect(new URL('/assinatura-vencida', request.url));
+  }
+
+  // Assinatura vencida (teste grátis acabou, ou assinatura ativa que lapsou
+  // sem renovar) bloqueia o acesso até o pagamento cair — workspaces sem data
+  // de vencimento definida (ex: criados manualmente sem plano) nunca bloqueiam
   // por esta regra. Acesso privilegiado (cortesia/parceria) nunca é bloqueado
   // por vencimento, mesmo com data no passado — só o status manual acima
   // ainda pode suspendê-lo.

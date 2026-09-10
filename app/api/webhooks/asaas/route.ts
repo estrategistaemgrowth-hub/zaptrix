@@ -57,7 +57,7 @@ export async function POST(request: NextRequest) {
 
     const { data: invoice } = await admin
       .from('invoices')
-      .select('id, workspace_id')
+      .select('id, workspace_id, kind, status')
       .eq('asaas_payment_id', payment.id)
       .maybeSingle();
 
@@ -66,22 +66,32 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: 'invoice_not_found' });
     }
 
+    // Idempotência: Asaas pode reenviar o mesmo evento (retry) — sem essa
+    // checagem, uma fatura de instância extra que já processou o incremento
+    // ganharia mais 1 instância a cada reentrega.
+    const alreadyPaid = invoice.status === 'paid';
+
     await admin.from('invoices').update({ status: newStatus }).eq('id', invoice.id);
 
-    // Pagamento confirmado reativa a assinatura e empurra o vencimento pra
-    // frente (30 dias a partir de hoje) — é isso que o middleware usa pra
-    // decidir se bloqueia o acesso, não o status da fatura isoladamente.
-    if (newStatus === 'paid') {
-      const nextExpiry = new Date();
-      nextExpiry.setDate(nextExpiry.getDate() + 30);
+    if (newStatus === 'paid' && !alreadyPaid) {
+      if (invoice.kind === 'extra_whatsapp_instance') {
+        await admin.rpc('increment_extra_whatsapp_connections', { p_workspace_id: invoice.workspace_id });
+      } else {
+        // Pagamento confirmado reativa a assinatura e empurra o vencimento
+        // pra frente (30 dias a partir de hoje) — é isso que o middleware
+        // usa pra decidir se bloqueia o acesso, não o status da fatura
+        // isoladamente.
+        const nextExpiry = new Date();
+        nextExpiry.setDate(nextExpiry.getDate() + 30);
 
-      await admin
-        .from('workspaces')
-        .update({
-          subscription_status: 'active',
-          subscription_expires_at: nextExpiry.toISOString(),
-        })
-        .eq('id', invoice.workspace_id);
+        await admin
+          .from('workspaces')
+          .update({
+            subscription_status: 'active',
+            subscription_expires_at: nextExpiry.toISOString(),
+          })
+          .eq('id', invoice.workspace_id);
+      }
     }
 
     return NextResponse.json({ status: 'success' });

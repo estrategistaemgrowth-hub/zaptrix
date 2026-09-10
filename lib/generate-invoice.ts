@@ -15,6 +15,7 @@ export async function generateInvoiceWithAsaasCharge({
   notes,
   cpfCnpj,
   createdBy,
+  kind = 'subscription',
 }: {
   admin: ReturnType<typeof createAdminClient>;
   workspaceId: string;
@@ -23,6 +24,10 @@ export async function generateInvoiceWithAsaasCharge({
   notes?: string | null;
   cpfCnpj?: string | null;
   createdBy: string;
+  /** 'subscription' (padrão) reativa a assinatura ao ser paga (webhook do
+   *  Asaas); 'extra_whatsapp_instance' só incrementa o contador de instâncias
+   *  extras — ver app/api/webhooks/asaas/route.ts. */
+  kind?: 'subscription' | 'extra_whatsapp_instance';
 }) {
   const { data: invoice, error: insertError } = await admin
     .from('invoices')
@@ -34,6 +39,7 @@ export async function generateInvoiceWithAsaasCharge({
         status: 'pending',
         notes: notes || null,
         created_by: createdBy,
+        kind,
       },
     ])
     .select()

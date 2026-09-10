@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient as createServerClient } from '@/lib/supabase/server';
-import { createInstance, generateInstanceName, setWebhook, deleteInstance } from '@/lib/evolution-api';
+import { createInstance, generateInstanceName, setWebhook, deleteInstance, logoutInstance } from '@/lib/evolution-api';
 
 function generateWebhookSecret() {
   return crypto.randomUUID().replace(/-/g, '');
@@ -119,6 +119,67 @@ export async function DELETE(request: NextRequest) {
 
   if (deleteError) {
     return NextResponse.json({ error: deleteError.message }, { status: 400 });
+  }
+
+  return NextResponse.json({ status: 'ok' });
+}
+
+/** Desconecta a sessão do WhatsApp (logout) sem apagar o histórico da conexão
+ *  — diferente do DELETE, que remove o registro inteiro. Depois de
+ *  desconectar, o lojista pode reconectar o mesmo número escaneando um novo
+ *  QR code. */
+export async function PATCH(request: NextRequest) {
+  const { connectionId } = await request.json();
+
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: 'Não autenticado' }, { status: 401 });
+  }
+
+  const { data: membership } = await supabase
+    .from('workspace_members')
+    .select('workspace_id, role')
+    .eq('user_id', user.id)
+    .limit(1)
+    .maybeSingle();
+
+  if (!membership || !['owner', 'admin'].includes(membership.role)) {
+    return NextResponse.json({ error: 'Sem permissão' }, { status: 403 });
+  }
+
+  const { data: connection } = await supabase
+    .from('whatsapp_connections')
+    .select('instance_name')
+    .eq('id', connectionId)
+    .eq('workspace_id', membership.workspace_id)
+    .maybeSingle();
+
+  if (!connection) {
+    return NextResponse.json({ error: 'Conexão não encontrada' }, { status: 404 });
+  }
+
+  try {
+    await logoutInstance(connection.instance_name);
+  } catch (err) {
+    console.error('Erro ao desconectar instância na Evolution API:', err);
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Erro ao desconectar' },
+      { status: 500 }
+    );
+  }
+
+  const { error: updateError } = await supabase
+    .from('whatsapp_connections')
+    .update({ status: 'disconnected', phone_number: null })
+    .eq('id', connectionId)
+    .eq('workspace_id', membership.workspace_id);
+
+  if (updateError) {
+    return NextResponse.json({ error: updateError.message }, { status: 400 });
   }
 
   return NextResponse.json({ status: 'ok' });

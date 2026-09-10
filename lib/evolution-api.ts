@@ -75,6 +75,12 @@ export async function deleteInstance(instanceName: string): Promise<void> {
   await evolutionFetch(`/instance/delete/${instanceName}`, { method: 'DELETE' });
 }
 
+/** Encerra a sessão do WhatsApp (logout) sem apagar a instância — o número
+ *  pode ser reconectado depois escaneando um novo QR code. */
+export async function logoutInstance(instanceName: string): Promise<void> {
+  await evolutionFetch(`/instance/logout/${instanceName}`, { method: 'DELETE' });
+}
+
 export async function setWebhook(instanceName: string, webhookUrl: string, webhookSecret: string) {
   return evolutionFetch(`/webhook/set/${instanceName}`, {
     method: 'POST',

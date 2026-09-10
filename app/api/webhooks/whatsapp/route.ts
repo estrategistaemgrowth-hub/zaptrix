@@ -272,7 +272,11 @@ async function buildKnowledgeContext(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string,
   queryText: string
-): Promise<{ contextText: string; productImages: Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }> }> {
+): Promise<{
+  contextText: string;
+  productImages: Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>;
+  catalogProducts: { productId: string; name: string }[];
+}> {
   const [{ data: allEntries }, { data: allProducts }] = await Promise.all([
     admin
       .from('knowledge_entries')
@@ -320,6 +324,10 @@ async function buildKnowledgeContext(
 
   const blocks: string[] = [];
   const productImages = new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>();
+  // Catálogo rankeado que de fato entrou no prompt — usado depois pra detectar
+  // menção do produto na resposta da IA, mesmo quando não há foto (base do
+  // card "Produtos mais procurados" do Dashboard).
+  const catalogProducts = (products || []).map((p) => ({ productId: p.id, name: p.name }));
 
   if (entries && entries.length > 0) {
     const lines = entries.map(
@@ -356,7 +364,7 @@ async function buildKnowledgeContext(
     blocks.push(`Catálogo de produtos da loja:\n${lines.join('\n')}`);
   }
 
-  if (blocks.length === 0) return { contextText: '', productImages };
+  if (blocks.length === 0) return { contextText: '', productImages, catalogProducts };
 
   const contextText =
     '\n\nUse as informações abaixo (Base de Conhecimento e catálogo de produtos) para responder o cliente ' +
@@ -367,7 +375,7 @@ async function buildKnowledgeContext(
     'pedida. Essas linhas são removidas antes de chegar ao cliente e disparam o envio real da imagem.\n\n' +
     blocks.join('\n\n');
 
-  return { contextText, productImages };
+  return { contextText, productImages, catalogProducts };
 }
 
 // Rascunho só passa pela verificação extra se citar algo que vale a pena
@@ -901,9 +909,13 @@ async function tryAutoReply({
       .map((m) => m.content)
       .join(' ');
 
-    const { contextText: knowledgeContext, productImages } = profile.use_knowledge_base
+    const { contextText: knowledgeContext, productImages, catalogProducts } = profile.use_knowledge_base
       ? await buildKnowledgeContext(admin, workspaceId, retrievalQuery)
-      : { contextText: '', productImages: new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>() };
+      : {
+          contextText: '',
+          productImages: new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>(),
+          catalogProducts: [] as { productId: string; name: string }[],
+        };
     const memoryContext = contact?.ai_memory
       ? `\n\nMemória sobre este cliente (o que já sabemos dele de conversas anteriores):\n${contact.ai_memory}`
       : '';
@@ -919,6 +931,10 @@ async function tryAutoReply({
     );
 
     const { cleanedText, productNames } = extractPhotoRequests(rawReply);
+
+    // Produtos já contabilizados nesta resposta (evita duplicar quando o
+    // produto tem foto E é citado por nome no texto).
+    const loggedProductIds = new Set<string>();
 
     // Fotos pedidas pela IA (marcador [FOTO: nome]) vão antes do texto —
     // sensação natural de "aqui estão as fotos, e..." em vez do contrário.
@@ -949,6 +965,7 @@ async function tryAutoReply({
             contact_id: contactId,
           },
         ]);
+        loggedProductIds.add(match.productId);
       } catch (err) {
         console.error('Erro ao enviar foto de produto solicitada pela IA:', err);
       }
@@ -962,6 +979,30 @@ async function tryAutoReply({
       knowledgeContext,
       draftReplyText
     );
+    // Produto citado pelo nome no texto (sem necessariamente enviar foto) também
+    // conta como interesse — a maioria das respostas é só texto, então sem isso
+    // o card "Produtos mais procurados" quase nunca teria dado suficiente.
+    const lowerReply = replyText.toLowerCase();
+    for (const product of catalogProducts) {
+      if (loggedProductIds.has(product.productId)) continue;
+      const name = product.name.trim();
+      if (name.length < 3) continue;
+      if (!lowerReply.includes(name.toLowerCase())) continue;
+      loggedProductIds.add(product.productId);
+      try {
+        await admin.from('product_clicks').insert([
+          {
+            workspace_id: workspaceId,
+            product_id: product.productId,
+            conversation_id: conversationId,
+            contact_id: contactId,
+          },
+        ]);
+      } catch (err) {
+        console.error('Erro ao registrar menção de produto:', err);
+      }
+    }
+
     const messageChunks = splitIntoWhatsappMessages(replyText);
 
     for (let i = 0; i < messageChunks.length; i++) {

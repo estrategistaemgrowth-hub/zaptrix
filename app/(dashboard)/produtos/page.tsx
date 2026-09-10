@@ -671,23 +671,26 @@ export default function ProdutosPage() {
               onClick={handleExportCsv}
               disabled={filteredProducts.length === 0}
               title="Exportar produtos filtrados para CSV"
-              className="flex items-center gap-2 px-4 py-2 border border-border text-foreground rounded-lg font-medium text-sm hover:bg-muted disabled:opacity-50"
+              className="flex items-center gap-2 px-3 sm:px-4 py-2 border border-border text-foreground rounded-lg font-medium text-sm hover:bg-muted disabled:opacity-50"
             >
               <Download className="w-4 h-4" />
-              Exportar
+              <span className="hidden sm:inline">Exportar</span>
             </button>
             {canManageProducts && (
               <>
                 <button
                   onClick={() => (selectionMode ? exitSelectionMode() : setSelectionMode(true))}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium text-sm border ${
+                  title={selectionMode ? 'Cancelar seleção' : 'Selecionar produtos'}
+                  className={`flex items-center gap-2 px-3 sm:px-4 py-2 rounded-lg font-medium text-sm border ${
                     selectionMode
                       ? 'bg-primary/10 text-primary border-primary/20'
                       : 'border-border text-foreground hover:bg-muted'
                   }`}
                 >
                   <Check className="w-4 h-4" />
-                  {selectionMode ? 'Cancelar seleção' : 'Selecionar'}
+                  <span className="hidden sm:inline">
+                    {selectionMode ? 'Cancelar seleção' : 'Selecionar'}
+                  </span>
                 </button>
                 <input
                   ref={fileInputRef}
@@ -698,28 +701,30 @@ export default function ProdutosPage() {
                 />
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-2 px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-muted"
+                  title="Importar planilha"
+                  className="flex items-center gap-2 px-3 sm:px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-muted text-sm sm:text-base"
                 >
                   <Upload className="w-4 h-4" />
-                  Importar planilha
+                  <span className="hidden sm:inline">Importar planilha</span>
                 </button>
                 <button
                   onClick={() => setShowCategoriesPanel(!showCategoriesPanel)}
-                  className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium border ${
+                  title="Categorias"
+                  className={`flex items-center gap-2 px-3 sm:px-6 py-2 rounded-lg font-medium border text-sm sm:text-base ${
                     showCategoriesPanel
                       ? 'bg-primary/10 text-primary border-primary/20'
                       : 'border-border text-foreground hover:bg-muted'
                   }`}
                 >
                   <FolderOpen className="w-4 h-4" />
-                  Categorias
+                  <span className="hidden sm:inline">Categorias</span>
                 </button>
                 <button
                   onClick={() => setShowForm(!showForm)}
-                  className="gradient-brand flex items-center gap-2 px-6 py-2 text-white rounded-lg font-medium shadow-sm transition-all duration-200 hover:shadow-md hover:opacity-95"
+                  className="gradient-brand flex items-center gap-2 px-3 sm:px-6 py-2 text-white rounded-lg font-medium text-sm sm:text-base shadow-sm transition-all duration-200 hover:shadow-md hover:opacity-95"
                 >
                   <Plus className="w-4 h-4" />
-                  Novo produto
+                  <span className="hidden sm:inline">Novo produto</span>
                 </button>
               </>
             )}

@@ -416,65 +416,111 @@ export default function ContatosPage() {
               )}
             </div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted border-b border-border">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Nome</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Telefone</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Tags</th>
-                    <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Último contato</th>
-                    <th className="px-6 py-3"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {pageContacts.map((contact) => {
-                    const label = contact.name || contact.push_name || 'Sem nome';
-                    return (
-                    <tr key={contact.id} className="transition-colors duration-200 hover:bg-primary/5">
-                      <td className="px-6 py-4 text-sm font-medium text-foreground">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold flex-shrink-0">
-                            {label.charAt(0).toUpperCase()}
-                          </div>
-                          {label}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">{contact.phone}</td>
-                      <td className="px-6 py-4">
-                        <div className="flex flex-wrap gap-1">
-                          {(contact.tags || []).map((tag) => (
-                            <span
-                              key={tag}
-                              className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
-                            >
-                              <Tag className="w-3 h-3" />
-                              {tag}
-                            </span>
-                          ))}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 text-sm text-muted-foreground">
-                        {contact.last_contact_at
-                          ? new Date(contact.last_contact_at).toLocaleDateString('pt-BR')
-                          : '—'}
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <button
-                          onClick={() => handleDeleteContact(contact.id)}
-                          className="p-1 text-destructive hover:bg-destructive/10 rounded"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </td>
+            <div>
+              {/* Tabela — telas médias e maiores */}
+              <div className="hidden md:block overflow-x-auto">
+                <table className="w-full">
+                  <thead className="bg-muted border-b border-border">
+                    <tr>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Nome</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Telefone</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Tags</th>
+                      <th className="px-6 py-3 text-left text-sm font-semibold text-foreground">Último contato</th>
+                      <th className="px-6 py-3"></th>
                     </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {pageContacts.map((contact) => {
+                      const label = contact.name || contact.push_name || 'Sem nome';
+                      return (
+                      <tr key={contact.id} className="transition-colors duration-200 hover:bg-primary/5">
+                        <td className="px-6 py-4 text-sm font-medium text-foreground">
+                          <div className="flex items-center gap-3">
+                            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                              {label.charAt(0).toUpperCase()}
+                            </div>
+                            {label}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">{contact.phone}</td>
+                        <td className="px-6 py-4">
+                          <div className="flex flex-wrap gap-1">
+                            {(contact.tags || []).map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
+                              >
+                                <Tag className="w-3 h-3" />
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 text-sm text-muted-foreground">
+                          {contact.last_contact_at
+                            ? new Date(contact.last_contact_at).toLocaleDateString('pt-BR')
+                            : '—'}
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <button
+                            onClick={() => handleDeleteContact(contact.id)}
+                            className="p-1 text-destructive hover:bg-destructive/10 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Cards — mobile e tablet */}
+              <div className="md:hidden divide-y divide-border">
+                {pageContacts.map((contact) => {
+                  const label = contact.name || contact.push_name || 'Sem nome';
+                  return (
+                    <div key={contact.id} className="p-4 flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-xs font-semibold flex-shrink-0">
+                        {label.charAt(0).toUpperCase()}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-foreground truncate">{label}</p>
+                        <p className="text-sm text-muted-foreground">{contact.phone}</p>
+                        {(contact.tags || []).length > 0 && (
+                          <div className="flex flex-wrap gap-1 mt-2">
+                            {(contact.tags || []).map((tag) => (
+                              <span
+                                key={tag}
+                                className="inline-flex items-center gap-1 px-2 py-0.5 bg-primary/10 text-primary text-xs rounded-full"
+                              >
+                                <Tag className="w-3 h-3" />
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                        <p className="text-xs text-muted-foreground mt-2">
+                          Último contato:{' '}
+                          {contact.last_contact_at
+                            ? new Date(contact.last_contact_at).toLocaleDateString('pt-BR')
+                            : '—'}
+                        </p>
+                      </div>
+                      <button
+                        onClick={() => handleDeleteContact(contact.id)}
+                        className="p-1.5 text-destructive hover:bg-destructive/10 rounded flex-shrink-0"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
 
               {filteredContacts.length > 0 && (
-                <div className="p-4 flex items-center justify-between gap-4 border-t border-border">
+                <div className="p-4 flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-border">
                   <p className="text-xs text-muted-foreground">
                     {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredContacts.length)} de{' '}
                     {filteredContacts.length}

@@ -315,20 +315,20 @@ export default function IaPage() {
   return (
     <div className="p-2">
       <div className="max-w-4xl mx-auto animate-fade-in">
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div className="flex items-center gap-3">
             <div className="gradient-brand w-11 h-11 rounded-xl flex items-center justify-center shadow-sm flex-shrink-0">
               <Zap className="w-5 h-5 text-white" fill="currentColor" />
             </div>
             <div>
-              <h1 className="text-3xl font-bold text-foreground">Configuração da IA</h1>
+              <h1 className="text-2xl sm:text-3xl font-bold text-foreground">Configuração da IA</h1>
               <p className="text-muted-foreground">Personalize seu agente de atendimento</p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => setFormData({ ...formData, enabled: !formData.enabled })}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
+            className={`flex items-center justify-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 self-start sm:self-auto ${
               formData.enabled
                 ? 'gradient-brand text-white shadow-sm'
                 : 'bg-muted text-muted-foreground'
@@ -394,7 +394,7 @@ export default function IaPage() {
         </div>
 
         <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
-          <div className="flex items-start justify-between gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-1">
                 Usar Conhecimento e Produtos
@@ -427,7 +427,7 @@ export default function IaPage() {
         </div>
 
         <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
-          <div className="flex items-start justify-between gap-4 mb-1">
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 mb-1">
             <div>
               <h3 className="text-lg font-semibold text-foreground mb-1 flex items-center gap-2">
                 <Clock className="w-4 h-4 text-primary" />
@@ -466,7 +466,7 @@ export default function IaPage() {
                   return (
                     <div
                       key={key}
-                      className="flex items-center gap-4 p-3 bg-muted"
+                      className="flex flex-wrap items-center gap-2 sm:gap-4 p-3 bg-muted"
                     >
                       <button
                         type="button"
@@ -524,7 +524,7 @@ export default function IaPage() {
 
         <div className="bg-card border border-border rounded-2xl shadow-sm p-8">
           <form onSubmit={handleSave} className="space-y-6">
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
                   Nome do agente
@@ -576,7 +576,7 @@ export default function IaPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">Tom de voz</label>
                 <select
@@ -623,7 +623,7 @@ export default function IaPage() {
               </div>
             )}
 
-            <div className="grid grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
                   Tópicos permitidos
@@ -675,16 +675,6 @@ export default function IaPage() {
               </button>
             </div>
           </form>
-        </div>
-
-        <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mt-8">
-          <h3 className="text-lg font-semibold text-foreground mb-4">Próximas Etapas</h3>
-          <ul className="space-y-2 text-sm text-muted-foreground">
-            <li>→ Adicione documentação na seção Base de Conhecimento</li>
-            <li>→ Configure o provedor de IA em Configurações</li>
-            <li>→ Conecte sua conta do WhatsApp em Configurações</li>
-            <li>→ Em cada conversa no Atendimento, você pode ligar/desligar a IA individualmente</li>
-          </ul>
         </div>
       </div>
     </div>

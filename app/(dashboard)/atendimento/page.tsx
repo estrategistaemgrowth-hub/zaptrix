@@ -784,8 +784,8 @@ export default function AtendimentoPage() {
         {viewMode === 'list' ? (
         <div
           className={`${
-            selectedConversation ? 'hidden md:flex' : 'flex'
-          } w-full md:w-80 bg-card border border-border rounded-2xl shadow-sm flex-col overflow-hidden`}
+            selectedConversation ? 'hidden lg:flex' : 'flex'
+          } w-full lg:w-80 bg-card border border-border rounded-2xl shadow-sm flex-col overflow-hidden`}
         >
           <div className="p-4 border-b border-border bg-muted">
             <h2 className="font-semibold text-foreground">Conversas</h2>
@@ -900,7 +900,7 @@ export default function AtendimentoPage() {
         ) : (
         <div
           className={`flex-1 gap-4 overflow-x-auto overflow-y-hidden ${
-            selectedConversation ? 'hidden md:flex' : 'flex'
+            selectedConversation ? 'hidden lg:flex' : 'flex'
           }`}
         >
           {KANBAN_COLUMNS.map((col) => {
@@ -1106,8 +1106,8 @@ export default function AtendimentoPage() {
         {/* Chat */}
         <div
           className={`bg-card border border-border rounded-2xl shadow-sm flex-col overflow-hidden ${
-            !selectedConversation ? 'hidden md:flex' : 'flex'
-          } ${viewMode === 'kanban' ? 'w-full md:w-96 md:flex-shrink-0' : 'w-full flex-1'}`}
+            !selectedConversation ? 'hidden lg:flex' : 'flex'
+          } ${viewMode === 'kanban' ? 'w-full lg:w-96 lg:flex-shrink-0' : 'w-full flex-1'}`}
         >
           {selectedConversation ? (
             <>
@@ -1117,7 +1117,7 @@ export default function AtendimentoPage() {
                   <button
                     onClick={() => setSelectedConversation(null)}
                     title={viewMode === 'list' ? 'Voltar pra lista' : 'Voltar pro kanban'}
-                    className="md:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground flex-shrink-0"
+                    className="lg:hidden p-1 -ml-1 text-muted-foreground hover:text-foreground flex-shrink-0"
                   >
                     <ChevronLeft className="w-5 h-5" />
                   </button>

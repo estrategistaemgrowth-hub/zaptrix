@@ -412,7 +412,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  Ainda sem dados suficientes — aparece aqui quando a IA envia fotos de produtos aos clientes.
+                  Ainda sem dados suficientes — aparece aqui quando a IA menciona ou envia fotos de produtos aos clientes.
                 </p>
               )}
             </div>

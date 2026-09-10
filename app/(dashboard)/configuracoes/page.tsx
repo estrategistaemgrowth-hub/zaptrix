@@ -876,9 +876,9 @@ export default function ConfiguracoesPage() {
               members.map((member) => (
                 <div
                   key={member.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
+                  className="flex items-center justify-between gap-2 p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
                 >
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 min-w-0 flex-1">
                     <div className="relative flex-shrink-0">
                       <div className="w-9 h-9 rounded-full bg-white border border-border flex items-center justify-center">
                         {member.role === 'owner' ? (
@@ -894,8 +894,10 @@ export default function ConfiguracoesPage() {
                         className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-muted"
                       />
                     </div>
-                    <div>
-                      <p className="font-medium text-foreground">{member.email || 'Sem e-mail'}</p>
+                    <div className="min-w-0">
+                      <p className="font-medium text-foreground truncate" title={member.email || 'Sem e-mail'}>
+                        {member.email || 'Sem e-mail'}
+                      </p>
                       <p className="text-sm text-muted-foreground">
                         {member.role === 'owner'
                           ? 'Proprietário'
@@ -905,7 +907,7 @@ export default function ConfiguracoesPage() {
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-1">
+                  <div className="flex items-center gap-1 flex-shrink-0">
                     <button
                       onClick={() => openEditMember(member)}
                       className="p-2 text-muted-foreground hover:text-primary hover:bg-primary/10 rounded-lg"

@@ -204,15 +204,15 @@ export default function ConhecimentoPage() {
   return (
     <div className="p-2">
       <div className="max-w-6xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-foreground">Base de Conhecimento</h1>
+            <h1 className="text-2xl md:text-3xl font-bold text-foreground">Base de Conhecimento</h1>
             <p className="text-muted-foreground">Conteúdo usado pela IA para responder clientes</p>
           </div>
           {canManage && (
             <button
               onClick={() => setShowForm(!showForm)}
-              className="flex items-center gap-2 px-6 py-2 btn-gradient font-medium"
+              className="flex items-center justify-center gap-2 px-6 py-2 btn-gradient font-medium self-start md:self-auto"
             >
               <Upload className="w-4 h-4" />
               Nova entrada
@@ -259,19 +259,19 @@ export default function ConhecimentoPage() {
                 <label className="block text-sm font-medium text-foreground">
                   URL da página (ex: FAQ ou política de troca do seu site)
                 </label>
-                <div className="flex gap-2">
+                <div className="flex flex-col sm:flex-row gap-2">
                   <input
                     type="url"
                     value={sourceUrl}
                     onChange={(e) => setSourceUrl(e.target.value)}
                     placeholder="https://sualoja.com.br/politica-de-troca"
-                    className="flex-1 px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                    className="flex-1 min-w-0 px-4 py-2 border border-border rounded-xl bg-white text-foreground"
                   />
                   <button
                     type="button"
                     onClick={handleFetchUrl}
                     disabled={fetchingUrl || !sourceUrl.trim()}
-                    className="flex items-center gap-2 px-4 py-2 btn-gradient font-medium disabled:opacity-50 whitespace-nowrap"
+                    className="flex items-center justify-center gap-2 px-4 py-2 btn-gradient font-medium disabled:opacity-50 whitespace-nowrap"
                   >
                     {fetchingUrl && <Loader2 className="w-4 h-4 animate-spin" />}
                     {fetchingUrl ? 'Buscando...' : 'Buscar'}
@@ -287,7 +287,7 @@ export default function ConhecimentoPage() {
             )}
 
             <form onSubmit={handleAddEntry} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     Título *

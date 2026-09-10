@@ -32,6 +32,21 @@ export async function ensureWorkspace(
     return { workspaceId: existing.workspace_id, role: existing.role };
   }
 
+  // Super admin (platform_admin) nunca deve ganhar um workspace de lojista
+  // automaticamente — ele não é lojista. Sem essa checagem, uma corrida no
+  // roteamento client-side (a página do dashboard chegando a montar por um
+  // instante antes do middleware redirecionar pro /master) cria workspaces
+  // fantasmas em nome do super admin (bug real, já aconteceu em produção).
+  const { data: adminRow } = await supabase
+    .from('platform_admins')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle();
+
+  if (adminRow) {
+    return null;
+  }
+
   // Usuário sem workspace: criar um automaticamente (dono), já com teste
   // grátis de 7 dias — sem subscription_expires_at definido, o middleware
   // nunca bloqueia por vencimento (bug real que isso corrige: alguém que

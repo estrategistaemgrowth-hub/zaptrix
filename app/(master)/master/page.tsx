@@ -570,7 +570,7 @@ export default function MasterAdminPage() {
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Status</th>
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Uso</th>
                   <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Atividade</th>
-                  <th className="px-6 py-4 text-left text-sm font-medium text-foreground">Ações</th>
+                  <th className="px-6 py-4 text-left text-sm font-medium text-foreground sticky right-0 bg-muted border-l border-border">Ações</th>
                 </tr>
               </thead>
               <tbody>
@@ -654,7 +654,7 @@ export default function MasterAdminPage() {
                           {ws.messages7d} msgs (7d)
                         </p>
                       </td>
-                      <td className="px-6 py-4">
+                      <td className="px-6 py-4 sticky right-0 bg-card border-l border-border">
                         <div className="flex gap-1">
                           <button
                             onClick={() => toggleStatus(ws)}
@@ -680,7 +680,7 @@ export default function MasterAdminPage() {
                           </button>
                           <button
                             onClick={() => setEditingWorkspace(ws)}
-                            title="Editar plano/vencimento"
+                            title="Editar plano, vencimento (estender teste) ou marcar como acesso privilegiado"
                             className="p-2 rounded-md text-muted-foreground hover:bg-muted"
                           >
                             <Edit2 className="w-4 h-4" />

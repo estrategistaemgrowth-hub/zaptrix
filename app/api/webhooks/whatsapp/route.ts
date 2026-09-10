@@ -36,6 +36,47 @@ function isWithinBusinessHours(businessHours: Record<string, BusinessHoursDay> |
   return currentTime >= dayConfig.start && currentTime <= dayConfig.end;
 }
 
+/**
+ * Anti-ban: WhatsApp não-oficial pune volume alto num número recém-conectado
+ * — o schedule abaixo é o "warmup" recomendado na prática pra ir soltando o
+ * limite conforme o número acumula histórico de uso normal. Some to nada
+ * disso rodava antes (min/max_delay_seconds, daily_message_limit e
+ * warmup_mode existiam no banco e na tela de Configurações, mas o envio real
+ * nunca lia essas colunas — delay fixo de 1.2s e zero limite diário).
+ */
+function warmupStageLimit(daysSinceConnected: number): number {
+  if (daysSinceConnected <= 2) return 40;
+  if (daysSinceConnected <= 6) return 80;
+  if (daysSinceConnected <= 13) return 150;
+  if (daysSinceConnected <= 29) return 250;
+  return 400;
+}
+
+function computeEffectiveDailyLimit(connection: {
+  daily_message_limit: number | null;
+  warmup_mode: boolean | null;
+  created_at: string;
+}): number | null {
+  if (!connection.warmup_mode) return connection.daily_message_limit;
+
+  const daysSinceConnected = Math.floor(
+    (Date.now() - new Date(connection.created_at).getTime()) / (1000 * 60 * 60 * 24)
+  );
+  const warmupLimit = warmupStageLimit(daysSinceConnected);
+
+  if (connection.daily_message_limit === null || connection.daily_message_limit === undefined) {
+    return warmupLimit;
+  }
+  return Math.min(connection.daily_message_limit, warmupLimit);
+}
+
+function randomDelayMs(minSeconds: number | null | undefined, maxSeconds: number | null | undefined): number {
+  const min = (minSeconds ?? 3) * 1000;
+  const max = (maxSeconds ?? 8) * 1000;
+  if (max <= min) return min;
+  return min + Math.floor(Math.random() * (max - min));
+}
+
 function buildSystemPrompt(profile: {
   agent_name: string | null;
   company_name: string | null;
@@ -633,6 +674,38 @@ async function tryAutoReply({
       return;
     }
 
+    const { data: connection } = await admin
+      .from('whatsapp_connections')
+      .select('created_at, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
+      .eq('instance_name', instanceName)
+      .maybeSingle();
+
+    if (connection) {
+      const effectiveDailyLimit = computeEffectiveDailyLimit(connection);
+
+      if (effectiveDailyLimit !== null) {
+        const todayStart = new Date();
+        todayStart.setHours(0, 0, 0, 0);
+
+        const { count: sentToday } = await admin
+          .from('messages')
+          .select('id', { count: 'exact', head: true })
+          .eq('workspace_id', workspaceId)
+          .eq('direction', 'outbound')
+          .gte('created_at', todayStart.toISOString());
+
+        if ((sentToday || 0) >= effectiveDailyLimit) {
+          console.warn(
+            `Limite diário anti-ban atingido (${effectiveDailyLimit}) — workspace ${workspaceId}, pulando resposta automática.`
+          );
+          // Marca pra um atendente humano assumir — o cliente não pode ficar sem resposta
+          // nenhuma só porque a IA bateu no teto de segurança do dia.
+          await admin.from('conversations').update({ needs_review: true }).eq('id', conversationId);
+          return;
+        }
+      }
+    }
+
     if (profile.business_hours_enabled && !isWithinBusinessHours(profile.business_hours)) {
       if (profile.out_of_hours_message) {
         const sendResult = await sendTextMessage(instanceName, phone, profile.out_of_hours_message);
@@ -741,7 +814,11 @@ async function tryAutoReply({
     const messageChunks = splitIntoWhatsappMessages(replyText);
 
     for (let i = 0; i < messageChunks.length; i++) {
-      if (i > 0) await new Promise((resolve) => setTimeout(resolve, 1200));
+      if (i > 0) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, randomDelayMs(connection?.min_delay_seconds, connection?.max_delay_seconds))
+        );
+      }
       const sendResult = await sendTextMessage(instanceName, phone, messageChunks[i]);
       await admin.from('messages').insert([
         {

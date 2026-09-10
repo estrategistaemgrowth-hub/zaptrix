@@ -238,12 +238,12 @@ export default function MasterAdminPage() {
   return (
     <div className="min-h-screen bg-background p-8">
       <div className="max-w-7xl mx-auto">
-        <div className="flex justify-between items-center mb-8">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-8">
           <div>
             <h1 className="text-3xl font-bold text-foreground">Painel Master</h1>
             <p className="text-muted-foreground">Gerenciar lojistas, planos e faturas da plataforma</p>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={() => setShowAuditLog(true)}
               className="px-4 py-2 border border-border text-foreground rounded-xl font-medium text-sm hover:bg-muted"
@@ -375,7 +375,7 @@ export default function MasterAdminPage() {
                 </div>
               )}
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">
                     Nome da loja *
@@ -452,7 +452,7 @@ export default function MasterAdminPage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-foreground mb-2">Plano *</label>
                     <select

@@ -389,57 +389,113 @@ async function buildKnowledgeContext(
   return { contextText, productImages, catalogProducts };
 }
 
-// Rascunho só passa pela verificação extra se citar algo que vale a pena
-// conferir (preço, frete, desconto, prazo) — a maioria das respostas
-// (saudação, pergunta de esclarecimento) não paga o custo/latência extra.
-const RISKY_CLAIM_PATTERN = /r\$\s?\d|gr[aá]tis|desconto|cupom|promo[çc][aã]o|frete|parcelas?|% ?off/i;
+interface ReplyReview {
+  finalReplyText: string;
+  corrected: boolean;
+  dealStage: 'GANHO' | 'PERDIDO' | 'CONTINUAR' | 'INCERTO';
+  needsHandoff: boolean;
+}
+
+interface ReviewProfile {
+  forbidden_topics: string | null;
+  business_rules: string | null;
+  tone: string | null;
+  custom_tone: string | null;
+  handoff_enabled: boolean | null;
+  handoff_trigger_rules: string | null;
+}
 
 /**
- * Verificação de fundamentação (grounding) da resposta antes de enviar —
- * ideia equivalente ao "verify-and-refine contra uma referência" do textgrad
- * (github.com/zou-group/textgrad), implementada nativamente como uma
- * segunda chamada curta ao mesmo provedor/modelo já configurado, sem
- * depender da lib Python (não roda em runtime Node/serverless). Só dispara
- * quando o rascunho contém uma afirmação de risco (ver RISKY_CLAIM_PATTERN)
- * e existe Base de Conhecimento carregada pra comparar — best-effort, nunca
- * bloqueia o envio se a verificação falhar.
+ * Auto-revisão da resposta antes de enviar — consolida em UMA chamada de LLM
+ * 3 verificações que antes eram 3 chamadas separadas (verifyReplyGrounding +
+ * classifyDealStage + a decisão SIM/NAO de checkHumanHandoff). Motivo: a
+ * Vercel deste projeto está no plano Hobby, que mata a function em ~10s
+ * mesmo com `maxDuration = 60` pedido (ver comentário em MAX_CHUNK_DELAY_MS
+ * acima) — um turno já podia encadear até 5 chamadas de IA sequenciais, então
+ * a saída pra ampliar a auto-crítica (agora cobre tom/tópicos proibidos/
+ * regras de negócio, não só preço) foi consolidar em vez de adicionar mais
+ * uma chamada em cima. Padrão equivalente ao generate-then-critique do
+ * Reflexion (github.com/noahshinn/reflexion): gera, um crítico revisa contra
+ * o que foi configurado, e só corrige o que realmente precisa.
+ * Best-effort: qualquer falha de rede ou de parsing do JSON devolve o
+ * rascunho original sem correção — nunca bloqueia o envio.
  */
-async function verifyReplyGrounding(
+async function reviewReply(
   provider: AiProvider,
   apiKey: string,
   modelId: string,
+  profile: ReviewProfile,
   knowledgeContext: string,
-  draftReply: string
-): Promise<string> {
-  if (!knowledgeContext || !RISKY_CLAIM_PATTERN.test(draftReply)) {
-    return draftReply;
-  }
+  draftReply: string,
+  latestExchange: string
+): Promise<ReplyReview> {
+  const fallback: ReplyReview = {
+    finalReplyText: draftReply,
+    corrected: false,
+    dealStage: 'CONTINUAR',
+    needsHandoff: false,
+  };
 
   try {
-    const verified = await callLlm(
+    const tone = profile.tone === 'personalizado' && profile.custom_tone ? profile.custom_tone : profile.tone;
+
+    const handoffSection = profile.handoff_enabled
+      ? '\n\n- "handoff": true se o cliente está pedindo explicitamente falar com um atendente humano, ' +
+        `demonstrando frustração/reclamação séria, ou alguma destas situações configuradas pela loja: ${
+          profile.handoff_trigger_rules?.trim() || 'nenhum gatilho adicional configurado'
+        }. Caso contrário, false.`
+      : '';
+
+    const prompt =
+      'Revise o RASCUNHO DE RESPOSTA abaixo, prestes a ser enviado a um cliente no WhatsApp, contra as regras ' +
+      'da loja e a última troca de mensagens. Responda APENAS com um JSON válido, sem texto antes ou depois, ' +
+      'sem cercas de código, no formato exato:\n' +
+      '{"corrected_reply": string ou null, "deal_stage": "GANHO"|"PERDIDO"|"CONTINUAR"|"INCERTO", "handoff": boolean}\n\n' +
+      '- "corrected_reply": null se o RASCUNHO já está adequado. Se o RASCUNHO afirma preço, prazo, frete, ' +
+      'desconto, cupom ou disponibilidade NÃO respaldado pela BASE DE CONHECIMENTO, ou foge do tom configurado, ' +
+      'ou menciona um TÓPICO PROIBIDO, ou viola alguma REGRA DE NEGÓCIO, reescreva o RASCUNHO corrigindo só a ' +
+      'parte problemática (mantendo o resto do texto, tom e quebras de linha idênticos) e devolva o texto ' +
+      'completo corrigido nesse campo.\n' +
+      '- "deal_stage": GANHO se o cliente confirmou compra/fechou pedido nesta troca, PERDIDO se desistiu ' +
+      'claramente ou pediu para não ser mais contatado, INCERTO se você não tem certeza, CONTINUAR caso contrário.' +
+      handoffSection +
+      `\n\nTOM CONFIGURADO: ${tone || 'não definido'}` +
+      `\nTÓPICOS PROIBIDOS: ${profile.forbidden_topics?.trim() || 'nenhum'}` +
+      `\nREGRAS DE NEGÓCIO: ${profile.business_rules?.trim() || 'nenhuma'}` +
+      `\n\nBASE DE CONHECIMENTO:${knowledgeContext || ' (nenhuma)'}` +
+      `\n\nÚLTIMA TROCA:\n${latestExchange}` +
+      `\n\nRASCUNHO DE RESPOSTA:\n${draftReply}`;
+
+    const raw = await callLlm(
       provider,
       apiKey,
       modelId,
-      'Você é um verificador de fatos para um vendedor de e-commerce no WhatsApp. Responda ' +
-        'APENAS com o texto final revisado, sem aspas, sem comentários, sem explicar o que mudou.',
-      [
-        {
-          role: 'user',
-          content:
-            'Abaixo está a BASE DE CONHECIMENTO real da loja e um RASCUNHO DE RESPOSTA que está prestes a ser ' +
-            'enviado a um cliente. Verifique se o RASCUNHO afirma algum preço, prazo, condição de frete, desconto, ' +
-            'cupom ou disponibilidade que NÃO esteja respaldado pela BASE DE CONHECIMENTO. Se encontrar alguma ' +
-            'afirmação não respaldada, reescreva o RASCUNHO removendo ou corrigindo só essa parte, mantendo o ' +
-            'resto do texto, tom e quebras de linha idênticos. Se o RASCUNHO já estiver totalmente respaldado, ' +
-            `devolva-o exatamente como está.\n\nBASE DE CONHECIMENTO:${knowledgeContext}\n\nRASCUNHO:\n${draftReply}`,
-        },
-      ]
+      'Você é o revisor de qualidade de um agente de vendas/atendimento de WhatsApp. Responda sempre com um ' +
+        'único objeto JSON válido, nunca com texto livre.',
+      [{ role: 'user', content: prompt }]
     );
 
-    return verified?.trim() || draftReply;
+    const jsonMatch = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
+    const parsed = JSON.parse(jsonMatch);
+
+    const dealStage: ReplyReview['dealStage'] = ['GANHO', 'PERDIDO', 'CONTINUAR', 'INCERTO'].includes(
+      parsed.deal_stage
+    )
+      ? parsed.deal_stage
+      : 'CONTINUAR';
+
+    const correctedReply =
+      typeof parsed.corrected_reply === 'string' && parsed.corrected_reply.trim() ? parsed.corrected_reply.trim() : null;
+
+    return {
+      finalReplyText: correctedReply ?? draftReply,
+      corrected: correctedReply !== null,
+      dealStage,
+      needsHandoff: profile.handoff_enabled ? !!parsed.handoff : false,
+    };
   } catch (err) {
-    console.error('Erro na verificação de fundamentação da resposta (ignorado, usando rascunho original):', err);
-    return draftReply;
+    console.error('Erro na auto-revisão da resposta (ignorado, usando rascunho original):', err);
+    return fallback;
   }
 }
 
@@ -603,125 +659,52 @@ async function updateContactMemory(
 }
 
 /**
- * Best-effort: pede pro mesmo provider/modelo já configurado classificar o
- * estágio do negócio a partir da última troca de mensagens (sem histórico
- * completo — não vale o custo/latência extra para essa classificação curta).
+ * Aplica em banco o estágio do negócio já decidido por `reviewReply` (antes
+ * era uma chamada de LLM própria, `classifyDealStage` — a decisão em si
+ * migrou pra dentro da chamada consolidada; esta função só faz o efeito).
  * GANHO/PERDIDO movem a conversa direto para a coluna correspondente do
- * Kanban; INCERTO liga a tag "Analisar conversa" sem mudar a coluna; qualquer
- * outra resposta (CONTINUAR ou fora do esperado) não faz nada — é o
- * comportamento atual, sem mudança.
+ * Kanban; INCERTO liga a tag "Analisar conversa" sem mudar a coluna; CONTINUAR
+ * não faz nada.
  */
-async function classifyDealStage(
+async function applyDealStageUpdate(
   admin: ReturnType<typeof createAdminClient>,
   conversationId: string,
-  provider: AiProvider,
-  apiKey: string,
-  model: string,
-  latestExchange: string
+  dealStage: ReplyReview['dealStage']
 ) {
   try {
-    const prompt =
-      `Última troca de mensagens:\n${latestExchange}\n\n` +
-      'Com base nesta conversa, o negócio deve ser considerado GANHO (cliente confirmou compra/fechou ' +
-      'pedido), PERDIDO (cliente desistiu claramente, disse não ter interesse, ou pediu para não ser mais ' +
-      'contatado), CONTINUAR (ainda em negociação/atendimento normal), ou você NÃO TEM CERTEZA. Responda com ' +
-      'APENAS uma palavra: GANHO, PERDIDO, CONTINUAR ou INCERTO.';
-
-    const raw = await callLlm(
-      provider,
-      apiKey,
-      model,
-      'Você classifica o estágio de um negócio de vendas a partir de uma troca de mensagens de WhatsApp. ' +
-        'Responda com uma única palavra, sem pontuação e sem comentários.',
-      [{ role: 'user', content: prompt }]
-    );
-
-    const verdict = raw.trim().toUpperCase();
-
-    if (verdict.startsWith('GANHO')) {
+    if (dealStage === 'GANHO') {
       await admin.from('conversations').update({ status: 'won', needs_review: false }).eq('id', conversationId);
-    } else if (verdict.startsWith('PERDIDO')) {
+    } else if (dealStage === 'PERDIDO') {
       await admin.from('conversations').update({ status: 'lost', needs_review: false }).eq('id', conversationId);
-    } else if (verdict.startsWith('INCERTO')) {
+    } else if (dealStage === 'INCERTO') {
       await admin.from('conversations').update({ needs_review: true }).eq('id', conversationId);
     }
-    // CONTINUAR ou qualquer resposta fora do esperado: nenhuma mudança.
+    // CONTINUAR: nenhuma mudança.
   } catch (error) {
-    console.error('Erro ao classificar estágio do negócio:', error);
+    console.error('Erro ao aplicar estágio do negócio:', error);
   }
 }
 
 /**
- * Best-effort: decide se esta troca deve ser transferida para um atendente
- * humano (Roleta de Atendimento, configurada em Configurações > Roleta de
- * Atendimento). Dispara em duas condições, qualquer uma basta:
- *   (a) o LLM responde SIM para o prompt de transferência — cliente pediu
- *       explicitamente um humano, demonstrou frustração/reclamação séria, ou
- *       bateu em algum dos gatilhos adicionais que a loja descreveu em
- *       `handoff_trigger_rules`;
- *   (b) a conversa já estava `needs_review = true` (classificação INCERTO de
- *       `classifyDealStage`) ANTES desta troca, e continua `true` depois dela
- *       — ou seja, ficou incerta 2 vezes seguidas. Não exige uma tabela de
- *       histórico nova: `classifyDealStage` só reseta `needs_review` para
- *       false em GANHO/PERDIDO, nunca em CONTINUAR, então dois INCERTO
- *       seguidos aparecem como o flag continuando `true` de uma chamada para
- *       a outra.
- * Quando dispara: desliga a IA na conversa e atribui o próximo atendente
- * (role 'atendente' ou 'admin') em round-robin, usando
- * `whatsapp_connections.last_assigned_member_id` como ponteiro da fila —
- * cada número tem a sua própria fila, não compartilha com outras conexões do
+ * Atribui o próximo atendente (role 'atendente' ou 'admin') em round-robin
+ * pra uma conversa que acabou de ser transferida pra humano — chamada quando
+ * `reviewReply` (ou 2 estágios INCERTO seguidos) decide que precisa de
+ * handoff (antes era decidido por uma chamada de LLM própria dentro desta
+ * mesma função, `checkHumanHandoff` — a decisão migrou pra dentro da chamada
+ * consolidada; esta função só faz o efeito de atribuição). Usa
+ * `whatsapp_connections.last_assigned_member_id` como ponteiro da fila — cada
+ * número tem a sua própria fila, não compartilha com outras conexões do
  * mesmo workspace. Sem atendente cadastrado, não atribui nada e não quebra o
  * fluxo. Erro aqui é só logado — a resposta da IA já foi enviada ao cliente
  * antes desta função rodar.
  */
-async function checkHumanHandoff(
+async function assignHandoffAttendant(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string,
   conversationId: string,
-  connectionId: string | null,
-  profile: { handoff_enabled: boolean | null; handoff_trigger_rules: string | null },
-  provider: AiProvider,
-  apiKey: string,
-  model: string,
-  latestExchange: string,
-  wasNeedsReviewBefore: boolean
+  connectionId: string | null
 ) {
-  if (!profile.handoff_enabled) return;
-
   try {
-    const extraRules = profile.handoff_trigger_rules?.trim()
-      ? profile.handoff_trigger_rules.trim()
-      : 'nenhum gatilho adicional configurado pela loja';
-
-    const prompt =
-      `Última troca de mensagens:\n${latestExchange}\n\n` +
-      'Considerando esta troca, o cliente está pedindo explicitamente para falar com um atendente humano, ' +
-      'demonstrando frustração/reclamação séria, OU alguma destas situações específicas configuradas pela ' +
-      `loja: ${extraRules}? Responda com APENAS uma palavra: SIM ou NAO.`;
-
-    const raw = await callLlm(
-      provider,
-      apiKey,
-      model,
-      'Você decide se uma conversa de atendimento no WhatsApp precisa ser transferida para um atendente ' +
-        'humano. Responda com uma única palavra, sem pontuação e sem comentários.',
-      [{ role: 'user', content: prompt }]
-    );
-
-    const explicitHandoff = raw.trim().toUpperCase().startsWith('SIM');
-
-    const { data: currentConversation } = await admin
-      .from('conversations')
-      .select('needs_review')
-      .eq('id', conversationId)
-      .maybeSingle();
-
-    const consecutiveUncertain = wasNeedsReviewBefore && !!currentConversation?.needs_review;
-
-    if (!explicitHandoff && !consecutiveUncertain) return;
-
-    await admin.from('conversations').update({ ai_enabled: false }).eq('id', conversationId);
-
     // Roleta por número (add-on de múltiplas conexões de WhatsApp): se o
     // lojista configurou quais atendentes participam do rodízio deste número
     // específico (connection_attendants), restringe a esses; sem nenhuma
@@ -1041,13 +1024,21 @@ async function tryAutoReply({
     }
 
     const draftReplyText = cleanedText || rawReply;
-    const replyText = await verifyReplyGrounding(
+    // Calculado aqui (antes de enviar) porque reviewReply precisa da última
+    // troca cliente/IA pra decidir estágio do negócio e handoff, junto com a
+    // auto-revisão do texto — as 3 coisas que antes eram 3 chamadas de LLM
+    // separadas (ver comentário em reviewReply).
+    const lastCustomerMessageForStage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
+    const review = await reviewReply(
       credential.provider as AiProvider,
       apiKey,
       credential.model_id || '',
+      profile,
       knowledgeContext,
-      draftReplyText
+      draftReplyText,
+      `Cliente: ${lastCustomerMessageForStage}\nIA: ${draftReplyText}`
     );
+    const replyText = review.finalReplyText;
     // Produto citado pelo nome no texto (sem necessariamente enviar foto) também
     // conta como interesse — a maioria das respostas é só texto, então sem isso
     // o card "Produtos mais procurados" quase nunca teria dado suficiente.
@@ -1093,33 +1084,15 @@ async function tryAutoReply({
       ]);
     }
 
-    // Best-effort: classifica o estágio do negócio com base só na última troca
-    // (cliente + resposta que acabou de ser enviada) — sem histórico completo,
-    // pra não pesar latência/custo. Roda antes do updateContactMemory (que usa
-    // o mesmo par de mensagens) mas depois de a resposta já ter sido entregue
-    // ao cliente — qualquer erro aqui nunca derruba o fluxo principal.
-    const lastCustomerMessageForStage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
-    await classifyDealStage(
-      admin,
-      conversationId,
-      credential.provider as AiProvider,
-      apiKey,
-      credential.model_id || '',
-      `Cliente: ${lastCustomerMessageForStage}\nIA: ${replyText}`
-    );
+    // Aplica em banco o que reviewReply já decidiu (estágio + necessidade de
+    // handoff) — nenhuma chamada de LLM nova aqui, só efeito.
+    await applyDealStageUpdate(admin, conversationId, review.dealStage);
 
-    await checkHumanHandoff(
-      admin,
-      workspaceId,
-      conversationId,
-      connection?.id || null,
-      profile,
-      credential.provider as AiProvider,
-      apiKey,
-      credential.model_id || '',
-      `Cliente: ${lastCustomerMessageForStage}\nIA: ${replyText}`,
-      wasNeedsReviewBefore
-    );
+    const consecutiveUncertain = wasNeedsReviewBefore && review.dealStage === 'INCERTO';
+    if (profile.handoff_enabled && (review.needsHandoff || consecutiveUncertain)) {
+      await admin.from('conversations').update({ ai_enabled: false }).eq('id', conversationId);
+      await assignHandoffAttendant(admin, workspaceId, conversationId, connection?.id || null);
+    }
 
     await admin
       .from('conversations')
@@ -1138,10 +1111,10 @@ async function tryAutoReply({
         model: credential.model_id,
         status: 'completed',
         latency_ms: Date.now() - startedAt,
+        self_check_corrected: review.corrected,
       },
     ]);
 
-    const lastCustomerMessage = [...history].reverse().find((m) => m.role === 'user')?.content || '';
     await updateContactMemory(
       admin,
       contactId,
@@ -1149,7 +1122,7 @@ async function tryAutoReply({
       credential.provider as AiProvider,
       apiKey,
       credential.model_id || '',
-      `Cliente: ${lastCustomerMessage}\nIA: ${replyText}`
+      `Cliente: ${lastCustomerMessageForStage}\nIA: ${replyText}`
     );
   } catch (error) {
     console.error('Erro na resposta automática da IA:', error);

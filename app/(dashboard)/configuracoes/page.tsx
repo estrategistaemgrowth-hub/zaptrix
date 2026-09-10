@@ -1626,7 +1626,7 @@ export default function ConfiguracoesPage() {
 
           {showAiForm && (
             <form onSubmit={handleAddCredential} className="mb-4 p-4 bg-muted rounded-xl space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <div className="flex items-center justify-between mb-2">
                     <label className="block text-sm font-medium text-foreground">Provider</label>

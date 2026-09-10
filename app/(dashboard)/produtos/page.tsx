@@ -948,7 +948,7 @@ export default function ProdutosPage() {
 
           {showFilters && (
             <div className="mt-4 pt-4 border-t border-border space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {allCategories.length > 0 && (
                   <div>
                     <p className="text-xs font-semibold text-muted-foreground mb-2">Categoria</p>
@@ -1039,7 +1039,7 @@ export default function ProdutosPage() {
         {showForm && (
           <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
             <form onSubmit={handleAddProduct} className="space-y-4">
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-foreground mb-2">Nome *</label>
                   <input
@@ -1157,7 +1157,7 @@ export default function ProdutosPage() {
 
               <div>
                 <p className="text-sm font-medium text-foreground mb-2">Este produto tem variação?</p>
-                <div className="grid grid-cols-4 gap-2 mb-3">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
                   <button
                     type="button"
                     onClick={() => setNewVariantType('none')}
@@ -1205,7 +1205,7 @@ export default function ProdutosPage() {
                 </div>
 
                 {newVariantType !== 'none' && (
-                  <div className="grid grid-cols-2 gap-4 p-4 bg-muted rounded-xl">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-muted rounded-xl">
                     {(newVariantType === 'simple_size' || newVariantType === 'composite') && (
                       <div>
                         <label className="block text-xs text-muted-foreground mb-1">Tamanho</label>

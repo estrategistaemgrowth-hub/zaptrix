@@ -89,36 +89,41 @@ export function PlanPicker({ onSubscribed }: { onSubscribed: (result: SubscribeR
 
   return (
     <div className="space-y-4 text-left">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-        {plans.map((plan) => (
-          <button
-            key={plan.id}
-            type="button"
-            onClick={() => setSelectedPlanId(plan.id)}
-            className={`p-4 rounded-2xl border text-left transition-all duration-200 ${
-              selectedPlanId === plan.id
-                ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
-                : 'border-border hover:border-primary/40'
-            }`}
-          >
-            <div className="flex items-center justify-between mb-1">
-              <p className="font-semibold text-foreground text-sm">{plan.name}</p>
-              {selectedPlanId === plan.id && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 pt-2.5">
+        {plans.map((plan) => {
+          const isRecommended = plan.name === 'Profissional';
+          return (
+            <div key={plan.id} className={`relative h-full ${isRecommended ? 'plan-card-recommended' : ''}`}>
+              {isRecommended && <span className="plan-card-recommended__badge">Recomendado</span>}
+              <button
+                type="button"
+                onClick={() => setSelectedPlanId(plan.id)}
+                className={`w-full h-full p-4 rounded-2xl border bg-card text-left transition-all duration-200 ${
+                  selectedPlanId === plan.id
+                    ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
+                    : 'border-border hover:border-primary/40'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <p className="font-semibold text-foreground text-sm">{plan.name}</p>
+                  {selectedPlanId === plan.id && <Check className="w-4 h-4 text-primary flex-shrink-0" />}
+                </div>
+                <p className="text-lg font-bold text-primary leading-tight">
+                  {formatCents(plan.price_cents)}
+                  <span className="text-xs font-normal text-muted-foreground">/mês</span>
+                </p>
+                <div className="mt-3 space-y-1.5">
+                  <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Package className="w-3 h-3 flex-shrink-0 mt-0.5" /> até {plan.product_limit} produtos
+                  </p>
+                  <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                    <Users className="w-3 h-3 flex-shrink-0 mt-0.5" /> até {plan.member_limit} usuários/atendentes
+                  </p>
+                </div>
+              </button>
             </div>
-            <p className="text-lg font-bold text-primary leading-tight">
-              {formatCents(plan.price_cents)}
-              <span className="text-xs font-normal text-muted-foreground">/mês</span>
-            </p>
-            <div className="mt-3 space-y-1.5">
-              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                <Package className="w-3 h-3 flex-shrink-0 mt-0.5" /> até {plan.product_limit} produtos
-              </p>
-              <p className="flex items-start gap-1.5 text-xs text-muted-foreground">
-                <Users className="w-3 h-3 flex-shrink-0 mt-0.5" /> até {plan.member_limit} usuários/atendentes
-              </p>
-            </div>
-          </button>
-        ))}
+          );
+        })}
       </div>
 
       <div>

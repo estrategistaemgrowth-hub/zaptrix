@@ -352,6 +352,76 @@ body {
   }
 }
 
+/* Selo "Recomendado" — plano em destaque nas telas de assinatura (ver
+   app/assinar/page.tsx e components/plan-picker.tsx). O card fica dentro de
+   um wrapper relative; o anel gira atrás dele (::before, fora do border-box
+   do próprio botão) enquanto o botão em si já é opaco (bg-card), então não
+   precisa de segundo pseudo-elemento pra mascarar o meio.
+   Importante: anima o ÂNGULO do gradiente (custom property), nunca um
+   `transform: rotate()` no próprio elemento — o ::before é um retângulo, não
+   um quadrado, e rotacionar o elemento em si faz os cantos saírem da caixa
+   durante o giro (fica um "triângulo" gigante vazando por cima do card ao
+   lado). Girar o ângulo do conic-gradient mantém a caixa parada e só o
+   degradê dentro dela se move. */
+@property --plan-ring-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes planRingSpin {
+  to {
+    --plan-ring-angle: 360deg;
+  }
+}
+
+.plan-card-recommended {
+  /* Contexto de empilhamento próprio — sem isso, o z-index:-1 do anel abaixo
+     escapa pra trás de QUALQUER ancestral (inclusive o fundo branco do card
+     externo), ficando invisível em vez de só atrás do botão. */
+  isolation: isolate;
+}
+
+.plan-card-recommended::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  z-index: -1;
+  border-radius: 1.25rem;
+  background: conic-gradient(
+    from var(--plan-ring-angle),
+    transparent 0deg,
+    #22d3ee 70deg,
+    #2563eb 150deg,
+    transparent 230deg,
+    transparent 360deg
+  );
+  animation: planRingSpin 3.5s linear infinite;
+}
+
+.plan-card-recommended__badge {
+  position: absolute;
+  top: -0.6rem;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 0.2rem 0.75rem;
+  border-radius: 9999px;
+  background: linear-gradient(to right, #22d3ee, #2563eb);
+  color: #fff;
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  box-shadow: 0 2px 8px -2px rgba(37, 99, 235, 0.5);
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plan-card-recommended::before {
+    animation: none !important;
+  }
+}
+
 /* Overlapping avatar stack — small circular avatars pulled together with
    negative margin, ring in the card background so they read as a stack. */
 .avatar-stack > * {

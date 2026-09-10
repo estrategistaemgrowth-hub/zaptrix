@@ -50,7 +50,7 @@ const SECTION_GROUPS: { label: string; items: { id: Section; label: string; icon
     items: [
       { id: 'whatsapp', label: 'WhatsApp', icon: Smartphone },
       { id: 'roleta', label: 'Roleta de Atendimento', icon: Shuffle },
-      { id: 'ia', label: 'API Key da IA', icon: Zap },
+      { id: 'ia', label: 'Provedor de IA', icon: Zap },
     ],
   },
 ];
@@ -1478,7 +1478,7 @@ export default function ConfiguracoesPage() {
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-3">
               <Zap className="w-5 h-5 text-primary" />
-              <h2 className="text-xl font-semibold text-foreground">API Key da IA</h2>
+              <h2 className="text-xl font-semibold text-foreground">Provedor de IA</h2>
             </div>
             <div className="flex items-center gap-2">
               <button

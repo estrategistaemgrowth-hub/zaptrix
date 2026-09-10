@@ -16,7 +16,6 @@ import {
   ArrowRight,
   Paperclip,
   FileText,
-  Brain,
   AlertTriangle,
   Check,
   CheckCheck,
@@ -27,11 +26,13 @@ import {
   Video,
   Mic,
   UserRound,
+  Info,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
 import { QuickRepliesModal, type QuickReply } from '@/components/quick-replies-modal';
+import { ConversationInfoPanel } from '@/components/conversation-info-panel';
 
 const CONVERSATIONS_FETCH_LIMIT = 500;
 
@@ -192,6 +193,7 @@ export default function AtendimentoPage() {
    *  que a seção "Membros" de Configurações já usa (admin.auth.admin.getUserById). */
   const [memberDirectory, setMemberDirectory] = useState<Record<string, string>>({});
   const [whatsappDisconnected, setWhatsappDisconnected] = useState(false);
+  const [showInfoPanel, setShowInfoPanel] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -346,6 +348,7 @@ export default function AtendimentoPage() {
 
   async function handleSelectConversation(conv: Conversation) {
     setSelectedConversation(conv);
+    setShowInfoPanel(false);
 
     const shouldClearUnread = !!conv.unread_count;
     const shouldClearReview = !!conv.needs_review;
@@ -987,48 +990,29 @@ export default function AtendimentoPage() {
           {selectedConversation ? (
             <>
               {/* Header */}
-              <div className="p-6 border-b border-border bg-muted flex justify-between items-center">
-                <div className="flex items-center gap-2">
-                  <div>
-                    <h2 className="text-xl font-bold text-foreground">
-                      {contactLabel(selectedConversation.contact)}
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {selectedConversation.contact?.phone}
-                    </p>
-                    {selectedConversation.assigned_to && (
-                      <p className="flex items-center gap-1 text-xs text-primary font-medium mt-1">
-                        <UserRound className="w-3 h-3" />
-                        Atribuído a: {assignedToLabel(selectedConversation.assigned_to)}
-                      </p>
-                    )}
-                  </div>
-
-                  {selectedConversation.contact?.ai_memory && (
-                    <div className="relative group flex-shrink-0">
-                      <button
-                        type="button"
-                        className="w-7 h-7 flex items-center justify-center rounded-full bg-primary/10 text-primary hover:bg-primary/20 transition-colors duration-150"
-                        title="Ver memória da IA sobre este cliente"
-                      >
-                        <Brain className="w-4 h-4" />
-                      </button>
-                      <div className="invisible opacity-0 group-hover:visible group-hover:opacity-100 transition-opacity duration-150 absolute left-0 top-full mt-2 w-80 max-w-[80vw] bg-card border border-border rounded-xl shadow-lg p-4 z-20">
-                        <p className="text-xs font-medium text-primary mb-1.5">
-                          Memória da IA sobre este cliente
-                        </p>
-                        <p className="text-xs text-foreground/80 whitespace-pre-line leading-relaxed">
-                          {selectedConversation.contact.ai_memory}
-                        </p>
-                      </div>
-                    </div>
-                  )}
+              <div className="p-6 border-b border-border bg-muted flex justify-between items-center gap-3">
+                <div className="min-w-0">
+                  <h2 className="text-xl font-bold text-foreground truncate">
+                    {contactLabel(selectedConversation.contact)}
+                  </h2>
+                  <p className="text-sm text-muted-foreground truncate">
+                    {selectedConversation.contact?.phone}
+                  </p>
                 </div>
-                <div className="flex items-center gap-3">
+
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <button
+                    onClick={() => setShowInfoPanel(true)}
+                    title="Informações da conversa"
+                    className="w-9 h-9 flex items-center justify-center rounded-full text-muted-foreground border border-border hover:bg-white hover:text-primary transition-colors duration-150 flex-shrink-0"
+                  >
+                    <Info className="w-4 h-4" />
+                  </button>
+
                   <button
                     onClick={handleToggleAI}
                     title={selectedConversation.ai_enabled ? 'Desligar IA (assumir manualmente)' : 'Ligar IA'}
-                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium border transition-all duration-200 ${
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-medium border transition-all duration-200 whitespace-nowrap ${
                       selectedConversation.ai_enabled
                         ? 'gradient-brand text-white border-transparent shadow-sm'
                         : 'bg-gray-100 text-muted-foreground border-border'
@@ -1045,7 +1029,7 @@ export default function AtendimentoPage() {
                   {selectedConversation.status === 'open' && (
                     <button
                       onClick={handleCloseConversation}
-                      className="flex items-center gap-2 px-4 py-2 bg-destructive text-white rounded-lg font-medium hover:opacity-90"
+                      className="flex items-center gap-2 px-4 py-2 bg-destructive text-white rounded-lg font-medium hover:opacity-90 whitespace-nowrap"
                     >
                       <CheckCircle2 className="w-4 h-4" />
                       Encerrar
@@ -1084,7 +1068,7 @@ export default function AtendimentoPage() {
                       }`}
                     >
                       <div
-                        className={`max-w-xs px-4 py-2 rounded-lg ${
+                        className={`max-w-xs min-w-0 px-4 py-2 rounded-lg ${
                           msg.is_internal_note
                             ? 'bg-amber-50 text-foreground border border-amber-200'
                             : msg.sender_type === 'human'
@@ -1125,7 +1109,7 @@ export default function AtendimentoPage() {
                               <div className="space-y-1">
                                 <audio src={msg.media_url} controls className="max-w-full" />
                                 {msg.transcript && (
-                                  <p className="text-xs italic opacity-80 whitespace-pre-wrap">
+                                  <p className="text-xs italic opacity-80 whitespace-pre-wrap break-words">
                                     &ldquo;{msg.transcript}&rdquo;
                                   </p>
                                 )}
@@ -1136,18 +1120,18 @@ export default function AtendimentoPage() {
                                 href={msg.media_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="flex items-center gap-2 underline text-sm"
+                                className="flex items-center gap-2 underline text-sm min-w-0"
                               >
                                 <FileText className="w-4 h-4 flex-shrink-0" />
-                                {msg.media_caption || 'Ver documento'}
+                                <span className="truncate">{msg.media_caption || 'Ver documento'}</span>
                               </a>
                             )}
                             {msg.media_caption && msg.message_type !== 'audio' && msg.message_type !== 'document' && (
-                              <p className="text-sm whitespace-pre-wrap">{msg.media_caption}</p>
+                              <p className="text-sm whitespace-pre-wrap break-words">{msg.media_caption}</p>
                             )}
                           </div>
                         ) : (
-                          <p className="text-sm whitespace-pre-wrap">{msg.content}</p>
+                          <p className="text-sm whitespace-pre-wrap break-words">{msg.content}</p>
                         )}
 
                         <p className="text-xs opacity-70 mt-1 flex items-center justify-end gap-1">
@@ -1379,6 +1363,19 @@ export default function AtendimentoPage() {
                   quickReplies={quickReplies}
                   onClose={() => setShowQuickRepliesModal(false)}
                   onChange={() => loadQuickReplies(workspaceId)}
+                />
+              )}
+
+              {showInfoPanel && (
+                <ConversationInfoPanel
+                  contactName={contactLabel(selectedConversation.contact)}
+                  phone={selectedConversation.contact?.phone || null}
+                  statusLabel={statusLabel(selectedConversation.status)}
+                  statusDotClass={statusDotClass(selectedConversation.status)}
+                  assignedLabel={assignedToLabel(selectedConversation.assigned_to)}
+                  aiMemory={selectedConversation.contact?.ai_memory || null}
+                  messages={messages}
+                  onClose={() => setShowInfoPanel(false)}
                 />
               )}
             </>

@@ -5,9 +5,9 @@ import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { fetchAllRows } from '@/lib/fetch-all-rows';
 import { downloadCsv } from '@/lib/csv-export';
-import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal, Download } from 'lucide-react';
+import { Search, MessageSquare, Users, Plus, Tag, X, Trash2, SlidersHorizontal, Download, ChevronLeft, ChevronRight } from 'lucide-react';
 
-const PAGE_SIZE = 200;
+const PAGE_SIZE = 25;
 
 interface Contact {
   id: string;
@@ -33,8 +33,11 @@ export default function ContatosPage() {
   const [showFilters, setShowFilters] = useState(false);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'recent' | 'name' | 'last_contact'>('recent');
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [currentPage, setCurrentPage] = useState(1);
   const supabase = createClient();
+
+  const totalPages = Math.max(1, Math.ceil(filteredContacts.length / PAGE_SIZE));
+  const pageContacts = filteredContacts.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
 
   const allTags = Array.from(new Set(contacts.flatMap((c) => c.tags || []))).sort();
 
@@ -70,7 +73,7 @@ export default function ContatosPage() {
     });
 
     setFilteredContacts(filtered);
-    setVisibleCount(PAGE_SIZE);
+    setCurrentPage(1);
   }, [searchTerm, contacts, selectedTags, sortBy]);
 
   function toggleTagFilter(tag: string) {
@@ -425,7 +428,7 @@ export default function ContatosPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-border">
-                  {filteredContacts.slice(0, visibleCount).map((contact) => {
+                  {pageContacts.map((contact) => {
                     const label = contact.name || contact.push_name || 'Sem nome';
                     return (
                     <tr key={contact.id} className="transition-colors duration-200 hover:bg-primary/5">
@@ -470,14 +473,31 @@ export default function ContatosPage() {
                 </tbody>
               </table>
 
-              {filteredContacts.length > visibleCount && (
-                <div className="p-4 text-center border-t border-border">
-                  <button
-                    onClick={() => setVisibleCount((v) => v + PAGE_SIZE)}
-                    className="px-6 py-2 border border-border rounded-xl font-medium text-sm text-foreground hover:bg-muted"
-                  >
-                    Carregar mais ({filteredContacts.length - visibleCount} restantes)
-                  </button>
+              {filteredContacts.length > 0 && (
+                <div className="p-4 flex items-center justify-between gap-4 border-t border-border">
+                  <p className="text-xs text-muted-foreground">
+                    {(currentPage - 1) * PAGE_SIZE + 1}–{Math.min(currentPage * PAGE_SIZE, filteredContacts.length)} de{' '}
+                    {filteredContacts.length}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                      disabled={currentPage === 1}
+                      className="p-2 border border-border rounded-lg text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <span className="text-sm text-foreground font-medium px-2">
+                      Página {currentPage} de {totalPages}
+                    </span>
+                    <button
+                      onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                      disabled={currentPage === totalPages}
+                      className="p-2 border border-border rounded-lg text-foreground hover:bg-muted disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               )}
             </div>

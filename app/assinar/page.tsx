@@ -138,7 +138,11 @@ function SignupForm() {
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-8">
-      <div className="max-w-lg w-full bg-card border border-border rounded-2xl shadow-sm p-8">
+      <div
+        className={`w-full bg-card border border-border rounded-2xl shadow-sm p-8 transition-[max-width] duration-200 ${
+          step === 0 ? 'max-w-2xl' : 'max-w-lg'
+        }`}
+      >
         <div className="flex justify-center mb-6">
           <Image src="/zaptrix-logo-light.png" alt="Zaptrix" width={150} height={48} priority />
         </div>

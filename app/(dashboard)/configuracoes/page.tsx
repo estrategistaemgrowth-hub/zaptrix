@@ -735,9 +735,11 @@ export default function ConfiguracoesPage() {
         </div>
       )}
 
-      {/* Submenu mobile: linha horizontal com scroll, sem os grupos (não cabe
-       *  a lista inteira empilhada acima do conteúdo numa tela de celular). */}
-      <div className="md:hidden flex gap-2 overflow-x-auto pb-3 -mx-2 px-2">
+      {/* Submenu mobile: grade com quebra de linha, sem os grupos (não cabe a
+       *  lista inteira empilhada acima do conteúdo numa tela de celular).
+       *  São só 5 itens — quebrar em 2 linhas fica mais limpo que rolagem
+       *  horizontal (que mostrava a barra de scroll nativa feia). */}
+      <div className="md:hidden flex flex-wrap gap-2 mb-1">
         {SECTION_GROUPS.flatMap((g) => g.items).map((item) => {
           const Icon = item.icon;
           const isActive = activeSection === item.id;
@@ -745,7 +747,7 @@ export default function ConfiguracoesPage() {
             <button
               key={item.id}
               onClick={() => setActiveSection(item.id)}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap flex-shrink-0 border transition-colors duration-150 ${
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-full text-sm font-medium whitespace-nowrap border transition-colors duration-150 ${
                 isActive
                   ? 'bg-primary text-white border-primary'
                   : 'bg-card text-foreground border-border hover:bg-muted'

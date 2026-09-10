@@ -1,10 +1,11 @@
-export type AiProvider = 'gemini' | 'groq' | 'openai' | 'anthropic';
+export type AiProvider = 'gemini' | 'groq' | 'openai' | 'anthropic' | 'cerebras';
 
 export const PROVIDER_LABELS: Record<AiProvider, string> = {
   gemini: 'Google Gemini',
   groq: 'Groq',
   openai: 'OpenAI',
   anthropic: 'Anthropic (Claude)',
+  cerebras: 'Cerebras',
 };
 
 export interface ProviderInfo {
@@ -67,6 +68,17 @@ export const PROVIDER_INFO: Record<AiProvider, ProviderInfo> = {
       'Vá em "API Keys", clique em "Create Key" e copie (começa com "sk-ant-")',
     ],
   },
+  cerebras: {
+    keysUrl: 'https://cloud.cerebras.ai/',
+    tag: 'free',
+    tagLabel: 'Tem plano grátis',
+    note: 'A Cerebras Cloud tem uma camada gratuita sem cartão, com inferência bem rápida — mesma categoria da Groq.',
+    steps: [
+      'Crie uma conta gratuita em cloud.cerebras.ai',
+      'No menu lateral, entre em "API Keys"',
+      'Clique em "Create API Key", dê um nome e copie a chave',
+    ],
+  },
 };
 
 export const PROVIDER_MODELS: Record<AiProvider, { id: string; label: string }[]> = {
@@ -89,5 +101,10 @@ export const PROVIDER_MODELS: Record<AiProvider, { id: string; label: string }[]
     { id: 'claude-sonnet-5', label: 'Claude Sonnet 5' },
     { id: 'claude-opus-5', label: 'Claude Opus 5 (mais capaz)' },
     { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5 (rápido e barato)' },
+  ],
+  cerebras: [
+    { id: 'llama-3.3-70b', label: 'Llama 3.3 70B (mais capaz)' },
+    { id: 'llama3.1-8b', label: 'Llama 3.1 8B (rápido e barato)' },
+    { id: 'qwen-3-32b', label: 'Qwen 3 32B' },
   ],
 };

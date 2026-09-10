@@ -45,6 +45,26 @@ async function callGroq(
   return data.choices[0].message.content.trim();
 }
 
+async function callCerebras(
+  apiKey: string,
+  model: string,
+  systemPrompt: string,
+  history: ChatMessage[]
+) {
+  const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [{ role: 'system', content: systemPrompt }, ...history],
+      temperature: 0.7,
+    }),
+  });
+  if (!res.ok) throw new Error(`Cerebras: ${(await res.text()).slice(0, 300)}`);
+  const data = await res.json();
+  return data.choices[0].message.content.trim();
+}
+
 async function callAnthropic(
   apiKey: string,
   model: string,
@@ -112,6 +132,8 @@ export async function callLlm(
       return callAnthropic(apiKey, model, systemPrompt, history);
     case 'gemini':
       return callGemini(apiKey, model, systemPrompt, history);
+    case 'cerebras':
+      return callCerebras(apiKey, model, systemPrompt, history);
     default:
       throw new Error(`Provider não suportado: ${provider}`);
   }

@@ -75,6 +75,24 @@ async function callGroq(apiKey: string, model: string, userPrompt: string) {
   return data.choices[0].message.content.trim();
 }
 
+async function callCerebras(apiKey: string, model: string, userPrompt: string) {
+  const res = await fetch('https://api.cerebras.ai/v1/chat/completions', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.7,
+    }),
+  });
+  if (!res.ok) throw new Error(`Cerebras: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  return data.choices[0].message.content.trim();
+}
+
 async function callGemini(apiKey: string, model: string, userPrompt: string) {
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`,
@@ -169,6 +187,9 @@ export async function POST(request: NextRequest) {
         break;
       case 'gemini':
         text = await callGemini(apiKey, model, userPrompt);
+        break;
+      case 'cerebras':
+        text = await callCerebras(apiKey, model, userPrompt);
         break;
       default:
         return NextResponse.json({ error: 'Provider não suportado' }, { status: 400 });

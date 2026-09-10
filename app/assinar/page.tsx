@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import Image from 'next/image';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { createClient } from '@/lib/supabase/client';
-import { Check, Loader2, Package, Users, ArrowLeft } from 'lucide-react';
+import { Check, Loader2, Package, Users, ArrowLeft, Smartphone } from 'lucide-react';
 
 interface Plan {
   id: string;
@@ -185,6 +185,9 @@ function SignupForm() {
                     <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                       <Users className="w-3 h-3 flex-shrink-0" /> até {plan.member_limit} usuários/atendentes
                     </p>
+                    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                      <Smartphone className="w-3 h-3 flex-shrink-0" /> 1 número de WhatsApp incluso
+                    </p>
                   </div>
                 </button>
               ))}
@@ -193,6 +196,7 @@ function SignupForm() {
             <ul className="text-xs text-muted-foreground space-y-1 px-1">
               <li>• Atendimento via WhatsApp com IA, respondendo seus clientes automaticamente</li>
               <li>• Catálogo de produtos, base de conhecimento e Kanban de vendas</li>
+              <li>• Precisa de mais de 1 número? Contrate instâncias adicionais por R$ 39,90/mês cada</li>
               <li>• Cancele quando quiser — sem fidelidade</li>
             </ul>
 

@@ -94,6 +94,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // Fatura de assinatura vencida sem pagamento (a Asaas dispara este evento
+    // sozinha quando passa do due_date, gerado com 3 dias de prazo) bloqueia
+    // o acesso na hora — o middleware já trata subscription_status='overdue'
+    // como bloqueio imediato, independente da data de expiração salva. Fatura
+    // de instância extra vencida NÃO bloqueia o workspace inteiro: o lojista
+    // só não ganha a instância, sem punir o resto da conta por um add-on.
+    if (newStatus === 'overdue' && invoice.kind !== 'extra_whatsapp_instance') {
+      await admin
+        .from('workspaces')
+        .update({ subscription_status: 'overdue' })
+        .eq('id', invoice.workspace_id);
+    }
+
     return NextResponse.json({ status: 'success' });
   } catch (error) {
     console.error('Erro no webhook do Asaas:', error);

@@ -114,6 +114,7 @@ interface Invoice {
   notes: string | null;
   created_at: string;
   asaas_invoice_url: string | null;
+  asaas_pix_qrcode: string | null;
 }
 
 function formatCents(cents: number): string {
@@ -204,6 +205,7 @@ export default function ConfiguracoesPage() {
   const [productCount, setProductCount] = useState(0);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [downloadingInvoiceId, setDownloadingInvoiceId] = useState<string | null>(null);
+  const [expandedInvoiceQrId, setExpandedInvoiceQrId] = useState<string | null>(null);
   const [showPlanPicker, setShowPlanPicker] = useState(false);
   const [planPickerResult, setPlanPickerResult] = useState<{
     pixQrCode: string | null;
@@ -308,7 +310,7 @@ export default function ConfiguracoesPage() {
         supabase.from('products').select('id', { count: 'exact', head: true }).eq('workspace_id', wsId),
         supabase
           .from('invoices')
-          .select('id, amount_cents, due_date, status, file_url, notes, created_at, asaas_invoice_url')
+          .select('id, amount_cents, due_date, status, file_url, notes, created_at, asaas_invoice_url, asaas_pix_qrcode')
           .eq('workspace_id', wsId)
           .order('due_date', { ascending: false }),
       ]);
@@ -1368,44 +1370,85 @@ export default function ConfiguracoesPage() {
             ) : (
               invoices.map((invoice) => {
                 const badge = invoiceStatusBadge(invoice.status);
+                const qrOpen = expandedInvoiceQrId === invoice.id;
                 return (
                   <div
                     key={invoice.id}
-                    className="flex items-center justify-between gap-4 p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
+                    className="p-4 border border-border rounded-2xl bg-muted transition-all duration-200 hover:shadow-sm"
                   >
-                    <div className="min-w-0">
-                      <p className="font-medium text-foreground">{formatCents(invoice.amount_cents)}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Vencimento:{' '}
-                        {new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString('pt-BR')}
-                      </p>
-                      {invoice.notes && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{invoice.notes}</p>
-                      )}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">{formatCents(invoice.amount_cents)}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Vencimento:{' '}
+                          {new Date(`${invoice.due_date}T00:00:00`).toLocaleDateString('pt-BR')}
+                        </p>
+                        {invoice.notes && (
+                          <p className="text-xs text-muted-foreground mt-0.5">{invoice.notes}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-3 flex-shrink-0">
+                        <StatusBadge label={badge.label} active={badge.active} tone={badge.tone} />
+                        {invoice.status === 'pending' && invoice.asaas_pix_qrcode ? (
+                          <button
+                            type="button"
+                            onClick={() => setExpandedInvoiceQrId(qrOpen ? null : invoice.id)}
+                            className="btn-gradient px-3 py-1.5 text-sm font-medium"
+                          >
+                            {qrOpen ? 'Ocultar QR code' : 'Pagar com PIX'}
+                          </button>
+                        ) : (
+                          invoice.status === 'pending' &&
+                          invoice.asaas_invoice_url && (
+                            <a
+                              href={invoice.asaas_invoice_url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="btn-gradient px-3 py-1.5 text-sm font-medium"
+                            >
+                              Pagar com PIX
+                            </a>
+                          )
+                        )}
+                        {invoice.file_url && (
+                          <button
+                            onClick={() => handleDownloadInvoice(invoice.id)}
+                            disabled={downloadingInvoiceId === invoice.id}
+                            className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-foreground bg-white hover:border-primary/40 hover:text-primary disabled:opacity-50 transition-colors duration-150"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                            {downloadingInvoiceId === invoice.id ? 'Gerando...' : 'Baixar'}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <StatusBadge label={badge.label} active={badge.active} tone={badge.tone} />
-                      {invoice.status === 'pending' && invoice.asaas_invoice_url && (
-                        <a
-                          href={invoice.asaas_invoice_url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn-gradient px-3 py-1.5 text-sm font-medium"
-                        >
-                          Pagar com PIX
-                        </a>
-                      )}
-                      {invoice.file_url && (
-                        <button
-                          onClick={() => handleDownloadInvoice(invoice.id)}
-                          disabled={downloadingInvoiceId === invoice.id}
-                          className="flex items-center gap-1.5 px-3 py-1.5 border border-border rounded-lg text-sm font-medium text-foreground bg-white hover:border-primary/40 hover:text-primary disabled:opacity-50 transition-colors duration-150"
-                        >
-                          <Download className="w-3.5 h-3.5" />
-                          {downloadingInvoiceId === invoice.id ? 'Gerando...' : 'Baixar'}
-                        </button>
-                      )}
-                    </div>
+
+                    {qrOpen && invoice.asaas_pix_qrcode && (
+                      <div className="mt-4 pt-4 border-t border-border text-center space-y-2">
+                        <div className="flex justify-center">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`data:image/png;base64,${invoice.asaas_pix_qrcode}`}
+                            alt="QR Code PIX"
+                            className="w-40 h-40"
+                          />
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          Escaneie com o app do seu banco. O acesso libera automaticamente assim que o
+                          pagamento for identificado.
+                        </p>
+                        {invoice.asaas_invoice_url && (
+                          <a
+                            href={invoice.asaas_invoice_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-block text-xs text-primary hover:underline"
+                          >
+                            Prefere boleto ou cartão? Abrir checkout completo
+                          </a>
+                        )}
+                      </div>
+                    )}
                   </div>
                 );
               })

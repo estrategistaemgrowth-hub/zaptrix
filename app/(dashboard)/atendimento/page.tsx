@@ -27,6 +27,8 @@ import {
   Mic,
   UserRound,
   Info,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
@@ -107,6 +109,7 @@ function statusDotClass(status: Conversation['status']): string {
 }
 
 const VIEW_MODE_STORAGE_KEY = 'zaptrix:atendimento:view-mode';
+const HIDDEN_COLUMNS_STORAGE_KEY = 'zaptrix:atendimento:hidden-columns';
 
 function timeAgo(dateStr: string | null): string | null {
   if (!dateStr) return null;
@@ -180,6 +183,8 @@ export default function AtendimentoPage() {
   const [error, setError] = useState('');
   const [showTyping, setShowTyping] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'kanban'>('list');
+  const [hiddenColumns, setHiddenColumns] = useState<string[]>([]);
+  const [openMoveMenuId, setOpenMoveMenuId] = useState<string | null>(null);
   const [draggedId, setDraggedId] = useState<string | null>(null);
   const [dragOverColumn, setDragOverColumn] = useState<Conversation['status'] | null>(null);
   const [uploadingMedia, setUploadingMedia] = useState(false);
@@ -214,10 +219,25 @@ export default function AtendimentoPage() {
     try {
       const stored = localStorage.getItem(VIEW_MODE_STORAGE_KEY);
       if (stored === 'kanban' || stored === 'list') setViewMode(stored);
+
+      const storedHidden = localStorage.getItem(HIDDEN_COLUMNS_STORAGE_KEY);
+      if (storedHidden) setHiddenColumns(JSON.parse(storedHidden));
     } catch {
-      // localStorage indisponível (modo privado, storage bloqueado etc.) — mantém "list"
+      // localStorage indisponível (modo privado, storage bloqueado etc.) — mantém os padrões
     }
   }, []);
+
+  function toggleColumnVisibility(status: string) {
+    setHiddenColumns((prev) => {
+      const next = prev.includes(status) ? prev.filter((s) => s !== status) : [...prev, status];
+      try {
+        localStorage.setItem(HIDDEN_COLUMNS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // best-effort
+      }
+      return next;
+    });
+  }
 
   function handleSetViewMode(mode: 'list' | 'kanban') {
     setViewMode(mode);
@@ -874,10 +894,28 @@ export default function AtendimentoPage() {
           </div>
         </div>
         ) : (
-        <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 overflow-hidden">
+        <div className="flex-1 flex gap-4 overflow-x-auto overflow-y-hidden">
           {KANBAN_COLUMNS.map((col) => {
             const columnConversations = visibleConversations.filter((c) => c.status === col.status);
             const otherColumns = KANBAN_COLUMNS.filter((c) => c.status !== col.status);
+            const isHidden = hiddenColumns.includes(col.status);
+
+            if (isHidden) {
+              return (
+                <button
+                  key={col.status}
+                  onClick={() => toggleColumnVisibility(col.status)}
+                  title={`Mostrar coluna ${col.label}`}
+                  className="w-14 flex-shrink-0 flex flex-col items-center gap-2 py-4 bg-card border border-border rounded-2xl shadow-sm hover:bg-muted transition-colors duration-150"
+                >
+                  <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${col.dot}`} />
+                  <span className="text-xs font-medium text-muted-foreground bg-muted border border-border rounded-full px-1.5 py-0.5">
+                    {columnConversations.length}
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-muted-foreground mt-1" />
+                </button>
+              );
+            }
 
             return (
               <div
@@ -885,16 +923,23 @@ export default function AtendimentoPage() {
                 onDragOver={(e) => handleColumnDragOver(e, col.status)}
                 onDragLeave={() => handleColumnDragLeave(col.status)}
                 onDrop={(e) => handleColumnDrop(e, col.status)}
-                className={`bg-card border rounded-2xl shadow-sm flex flex-col overflow-hidden transition-colors duration-200 ${
+                className={`flex-1 min-w-[280px] bg-card border rounded-2xl shadow-sm flex flex-col overflow-hidden transition-colors duration-200 ${
                   dragOverColumn === col.status ? 'border-primary ring-2 ring-primary/20' : 'border-border'
                 }`}
               >
                 <div className="p-4 border-b border-border bg-muted flex items-center gap-2">
                   <span className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${col.dot}`} />
                   <h2 className="font-semibold text-foreground">{col.label}</h2>
-                  <span className="ml-auto text-xs font-medium text-muted-foreground bg-card border border-border rounded-full px-2 py-0.5">
+                  <span className="text-xs font-medium text-muted-foreground bg-card border border-border rounded-full px-2 py-0.5">
                     {columnConversations.length}
                   </span>
+                  <button
+                    onClick={() => toggleColumnVisibility(col.status)}
+                    title="Ocultar coluna"
+                    className="ml-auto p-1 text-muted-foreground hover:text-foreground hover:bg-card rounded-md"
+                  >
+                    <ChevronLeft className="w-4 h-4" />
+                  </button>
                 </div>
 
                 <div className="flex-1 overflow-y-auto p-3 space-y-3">
@@ -989,29 +1034,51 @@ export default function AtendimentoPage() {
                             ) : (
                               <span />
                             )}
-                            <div className="w-7 h-7 rounded-full bg-primary/10 text-primary flex items-center justify-center font-semibold text-[10px] ring-2 ring-card">
-                              {initial}
-                            </div>
-                          </div>
 
-                          {otherColumns.length > 0 && (
-                            <div className="flex items-center gap-1.5 mt-2.5 pt-2.5 border-t border-border">
-                              {otherColumns.map((target) => (
+                            {otherColumns.length > 0 && (
+                              <div className="relative">
                                 <button
-                                  key={target.status}
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleChangeStatus(conv.id, target.status);
+                                    setOpenMoveMenuId((prev) => (prev === conv.id ? null : conv.id));
                                   }}
-                                  title={`Mover para ${target.label}`}
-                                  className="flex-1 flex items-center justify-center gap-1 px-2 py-1 text-[11px] font-medium text-muted-foreground border border-border rounded-lg hover:bg-muted hover:text-foreground transition-colors duration-150"
+                                  title="Ações rápidas"
+                                  className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-muted-foreground border border-border rounded-lg hover:bg-muted hover:text-foreground transition-colors duration-150"
                                 >
                                   <ArrowRight className="w-3 h-3" />
-                                  {target.label}
+                                  Mover
                                 </button>
-                              ))}
-                            </div>
-                          )}
+
+                                {openMoveMenuId === conv.id && (
+                                  <>
+                                    <div
+                                      className="fixed inset-0 z-40"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setOpenMoveMenuId(null);
+                                      }}
+                                    />
+                                    <div className="absolute right-0 bottom-full mb-1 z-50 w-44 bg-card border border-border rounded-xl shadow-lg overflow-hidden">
+                                      {otherColumns.map((target) => (
+                                        <button
+                                          key={target.status}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleChangeStatus(conv.id, target.status);
+                                            setOpenMoveMenuId(null);
+                                          }}
+                                          className="w-full flex items-center gap-2 px-3 py-2 text-xs font-medium text-foreground hover:bg-muted transition-colors duration-150 text-left"
+                                        >
+                                          <span className={`w-2 h-2 rounded-full flex-shrink-0 ${target.dot}`} />
+                                          {target.label}
+                                        </button>
+                                      ))}
+                                    </div>
+                                  </>
+                                )}
+                              </div>
+                            )}
+                          </div>
                         </div>
                       );
                     })

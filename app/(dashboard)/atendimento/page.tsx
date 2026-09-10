@@ -29,6 +29,7 @@ import {
   Info,
   ChevronLeft,
   ChevronRight,
+  Smartphone,
 } from 'lucide-react';
 import { TypingIndicator } from '@/components/typing-indicator';
 import { SkeletonRow } from '@/components/skeleton';
@@ -642,6 +643,13 @@ export default function AtendimentoPage() {
     return email ? email.split('@')[0] : 'Atendente';
   }
 
+  function connectionLabel(connectionId: string | null): string | null {
+    if (!connectionId) return null;
+    const conn = connectionsList.find((c) => c.id === connectionId);
+    if (!conn) return null;
+    return conn.phone_number ? `+${conn.phone_number}` : conn.instance_name;
+  }
+
   async function handleChangeStatus(conversationId: string, newStatus: Conversation['status']) {
     if (!workspaceId) return;
 
@@ -912,6 +920,15 @@ export default function AtendimentoPage() {
                             {assignedToLabel(conv.assigned_to)}
                           </span>
                         )}
+                        {connectionsList.length > 1 && connectionLabel(conv.whatsapp_connection_id) && (
+                          <span
+                            className="flex items-center gap-1 text-xs text-muted-foreground"
+                            title="Número por onde esta conversa está acontecendo"
+                          >
+                            <Smartphone className="w-3 h-3" />
+                            {connectionLabel(conv.whatsapp_connection_id)}
+                          </span>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -1038,6 +1055,15 @@ export default function AtendimentoPage() {
                                   {assignedToLabel(conv.assigned_to)}
                                 </span>
                               )}
+                              {connectionsList.length > 1 && connectionLabel(conv.whatsapp_connection_id) && (
+                                <span
+                                  className="flex items-center gap-1 text-[11px] text-muted-foreground"
+                                  title="Número por onde esta conversa está acontecendo"
+                                >
+                                  <Smartphone className="w-3 h-3" />
+                                  {connectionLabel(conv.whatsapp_connection_id)}
+                                </span>
+                              )}
                             </div>
                             {typeof conv.unread_count === 'number' && conv.unread_count > 0 && (
                               <span className="flex-shrink-0 min-w-[20px] h-5 px-1.5 flex items-center justify-center gradient-brand text-white text-[11px] font-semibold rounded-full shadow-sm">
@@ -1151,6 +1177,9 @@ export default function AtendimentoPage() {
                     </h2>
                     <p className="text-sm text-muted-foreground truncate">
                       {selectedConversation.contact?.phone}
+                      {connectionsList.length > 1 &&
+                        connectionLabel(selectedConversation.whatsapp_connection_id) &&
+                        ` · ${connectionLabel(selectedConversation.whatsapp_connection_id)}`}
                     </p>
                   </div>
                 </div>

@@ -668,9 +668,11 @@ async function classifyDealStage(
  *       a outra.
  * Quando dispara: desliga a IA na conversa e atribui o próximo atendente
  * (role 'atendente' ou 'admin') em round-robin, usando
- * `workspaces.last_assigned_member_id` como ponteiro da fila. Sem atendente
- * cadastrado, não atribui nada e não quebra o fluxo. Erro aqui é só logado —
- * a resposta da IA já foi enviada ao cliente antes desta função rodar.
+ * `whatsapp_connections.last_assigned_member_id` como ponteiro da fila —
+ * cada número tem a sua própria fila, não compartilha com outras conexões do
+ * mesmo workspace. Sem atendente cadastrado, não atribui nada e não quebra o
+ * fluxo. Erro aqui é só logado — a resposta da IA já foi enviada ao cliente
+ * antes desta função rodar.
  */
 async function checkHumanHandoff(
   admin: ReturnType<typeof createAdminClient>,
@@ -753,25 +755,37 @@ async function checkHumanHandoff(
 
     if (!attendants || attendants.length === 0) return;
 
-    const { data: workspace } = await admin
-      .from('workspaces')
-      .select('last_assigned_member_id')
-      .eq('id', workspaceId)
-      .maybeSingle();
+    // Ponteiro do rodízio: por conexão quando o número é conhecido (padrão,
+    // desde que existe multi-conexão) — cada número tem sua própria fila, pra
+    // 2 conexões fazendo handoff ao mesmo tempo não disputarem a mesma vaga.
+    // Sem conexão resolvida (caso raro), cai no ponteiro do workspace de
+    // sempre, só pra nunca deixar de atribuir alguém.
+    const lastAssignedId = connectionId
+      ? (
+          await admin.from('whatsapp_connections').select('last_assigned_member_id').eq('id', connectionId).maybeSingle()
+        ).data?.last_assigned_member_id
+      : (await admin.from('workspaces').select('last_assigned_member_id').eq('id', workspaceId).maybeSingle()).data
+          ?.last_assigned_member_id;
 
-    const lastIndex = workspace?.last_assigned_member_id
-      ? attendants.findIndex((m) => m.user_id === workspace.last_assigned_member_id)
-      : -1;
+    const lastIndex = lastAssignedId ? attendants.findIndex((m) => m.user_id === lastAssignedId) : -1;
     const nextAttendant = attendants[(lastIndex + 1) % attendants.length];
 
     await admin
       .from('conversations')
       .update({ assigned_to: nextAttendant.user_id })
       .eq('id', conversationId);
-    await admin
-      .from('workspaces')
-      .update({ last_assigned_member_id: nextAttendant.user_id })
-      .eq('id', workspaceId);
+
+    if (connectionId) {
+      await admin
+        .from('whatsapp_connections')
+        .update({ last_assigned_member_id: nextAttendant.user_id })
+        .eq('id', connectionId);
+    } else {
+      await admin
+        .from('workspaces')
+        .update({ last_assigned_member_id: nextAttendant.user_id })
+        .eq('id', workspaceId);
+    }
   } catch (error) {
     console.error('Erro no handoff automático para atendente humano:', error);
   }
@@ -1313,15 +1327,26 @@ export async function POST(request: NextRequest) {
       contactId = newContact.id;
     }
 
-    // Reaproveita a conversa mais recente do contato, seja qual for o status —
-    // sem isso, uma conversa fechada/perdida/ganha virava um card duplicado
+    // Reaproveita a conversa deste contato NESTA conexão específica — sem
+    // isso, uma conversa fechada/perdida/ganha virava um card duplicado
     // sempre que o mesmo cliente escrevia de novo. Se estava fechada, reabre
     // e marca reopened_count (vira a tag "Reaberta" na UI).
+    //
+    // Escopo por whatsapp_connection_id é essencial pro multi-agente: cada
+    // número de WhatsApp (Construtor de Agente, Base de Conhecimento por
+    // agente) precisa da SUA PRÓPRIA conversa por contato — sem isso, um
+    // cliente que escreve pro número de Vendas e depois pro de Suporte
+    // ficaria com uma única conversa "roubada" entre os dois agentes,
+    // misturando histórico e contexto. Conversas de antes de existir mais de
+    // 1 conexão (whatsapp_connection_id NULL) são adotadas pela conexão que
+    // primeiro receber mensagem daquele contato depois desta mudança —
+    // depois disso, cada conexão segue com a sua própria conversa isolada.
     const { data: existingConversation } = await admin
       .from('conversations')
       .select('id, status, unread_count, reopened_count, whatsapp_connection_id')
       .eq('workspace_id', workspaceId)
       .eq('contact_id', contactId)
+      .or(`whatsapp_connection_id.eq.${connection.id},whatsapp_connection_id.is.null`)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -1342,10 +1367,9 @@ export async function POST(request: NextRequest) {
             whatsapp_connection_id: connection.id,
           })
           .eq('id', conversationId);
-      } else if (existingConversation.whatsapp_connection_id !== connection.id) {
-        // Mantém a conversa marcada com o número por onde ela realmente está
-        // acontecendo agora — relevante quando o workspace tem mais de 1
-        // conexão de WhatsApp (add-on pago) e o cliente troca de número.
+      } else if (existingConversation.whatsapp_connection_id === null) {
+        // Conversa legada (de antes de existir mais de 1 número) — adota
+        // pra esta conexão, já que é por ela que está acontecendo agora.
         await admin
           .from('conversations')
           .update({ whatsapp_connection_id: connection.id })

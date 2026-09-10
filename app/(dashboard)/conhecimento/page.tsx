@@ -16,6 +16,13 @@ interface KnowledgeEntry {
   created_at: string;
   source_url: string | null;
   source_fetched_at: string | null;
+  whatsapp_connection_id: string | null;
+}
+
+interface WhatsappConnectionLite {
+  id: string;
+  phone_number: string | null;
+  instance_name: string;
 }
 
 export default function ConhecimentoPage() {
@@ -34,6 +41,10 @@ export default function ConhecimentoPage() {
   const [pendingSourceUrl, setPendingSourceUrl] = useState<string | null>(null);
   const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const [confirmState, setConfirmState] = useState<ConfirmState | null>(null);
+  /** Só relevante com mais de 1 número de WhatsApp — cada agente pode ter
+   *  entradas próprias além das compartilhadas (whatsapp_connection_id NULL). */
+  const [connections, setConnections] = useState<WhatsappConnectionLite[]>([]);
+  const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -54,7 +65,15 @@ export default function ConhecimentoPage() {
 
       setWorkspaceId(workspace.workspaceId);
       setCanManage(workspace.role === 'owner' || workspace.role === 'admin');
-      await loadEntries(workspace.workspaceId);
+
+      const { data: connectionRows } = await supabase
+        .from('whatsapp_connections')
+        .select('id, phone_number, instance_name')
+        .eq('workspace_id', workspace.workspaceId)
+        .order('created_at', { ascending: true });
+
+      setConnections(connectionRows || []);
+      await loadEntries(workspace.workspaceId, null);
     } catch (err) {
       console.error('Erro ao carregar entradas:', err);
     } finally {
@@ -62,12 +81,16 @@ export default function ConhecimentoPage() {
     }
   }
 
-  async function loadEntries(wsId: string) {
-    const { data, error: loadError } = await supabase
-      .from('knowledge_entries')
-      .select('*')
-      .eq('workspace_id', wsId)
-      .order('created_at', { ascending: false });
+  /** connectionId null = aba "Compartilhado" (entradas visíveis a todos os
+   *  agentes); connectionId de um número = só as entradas específicas dele
+   *  (não soma com as compartilhadas aqui — diferente do webhook, que soma
+   *  as duas pro agente responder; na tela cada entrada precisa aparecer
+   *  numa aba só, senão confunde onde ela "mora"). */
+  async function loadEntries(wsId: string, connectionId: string | null) {
+    const query = supabase.from('knowledge_entries').select('*').eq('workspace_id', wsId);
+    const { data, error: loadError } = await (
+      connectionId ? query.eq('whatsapp_connection_id', connectionId) : query.is('whatsapp_connection_id', null)
+    ).order('created_at', { ascending: false });
 
     if (loadError) {
       setError('Erro ao carregar base de conhecimento: ' + loadError.message);
@@ -75,6 +98,13 @@ export default function ConhecimentoPage() {
     }
 
     setEntries(data || []);
+  }
+
+  async function handleSelectConnectionTab(connectionId: string | null) {
+    if (!workspaceId || connectionId === activeConnectionId) return;
+    setActiveConnectionId(connectionId);
+    setError('');
+    await loadEntries(workspaceId, connectionId);
   }
 
   async function handleAddEntry(e: React.FormEvent) {
@@ -87,6 +117,7 @@ export default function ConhecimentoPage() {
     const { error: insertError } = await supabase.from('knowledge_entries').insert([
       {
         workspace_id: workspaceId,
+        whatsapp_connection_id: activeConnectionId,
         title: formData.title,
         category: formData.category || null,
         content: formData.content,
@@ -109,7 +140,7 @@ export default function ConhecimentoPage() {
     setAddMode('manual');
     setShowForm(false);
     setSubmitting(false);
-    await loadEntries(workspaceId);
+    await loadEntries(workspaceId, activeConnectionId);
   }
 
   async function handleFetchUrl() {
@@ -168,7 +199,7 @@ export default function ConhecimentoPage() {
         return;
       }
 
-      await loadEntries(workspaceId);
+      await loadEntries(workspaceId, activeConnectionId);
     } catch (err) {
       console.error('Erro ao atualizar entrada da URL:', err);
       alert('Erro inesperado ao atualizar');
@@ -189,7 +220,7 @@ export default function ConhecimentoPage() {
       alert('Erro ao atualizar: ' + updateError.message);
       return;
     }
-    await loadEntries(workspaceId);
+    await loadEntries(workspaceId, activeConnectionId);
   }
 
   function handleDeleteEntry(id: string) {
@@ -204,9 +235,25 @@ export default function ConhecimentoPage() {
           alert('Erro ao deletar: ' + deleteError.message);
           return;
         }
-        await loadEntries(workspaceId);
+        await loadEntries(workspaceId, activeConnectionId);
       },
     });
+  }
+
+  async function handleMoveEntry(entryId: string, newConnectionId: string | null) {
+    if (!workspaceId) return;
+
+    const { error: updateError } = await supabase
+      .from('knowledge_entries')
+      .update({ whatsapp_connection_id: newConnectionId })
+      .eq('id', entryId);
+
+    if (updateError) {
+      alert('Erro ao mover entrada: ' + updateError.message);
+      return;
+    }
+    // A entrada some da aba atual (não pertence mais a este escopo).
+    await loadEntries(workspaceId, activeConnectionId);
   }
 
   return (
@@ -227,6 +274,46 @@ export default function ConhecimentoPage() {
             </button>
           )}
         </div>
+
+        {connections.length > 1 && (
+          <div className="mb-6">
+            <p className="text-sm text-muted-foreground mb-2">
+              Seu workspace tem {connections.length} números de WhatsApp — dê conhecimento específico a cada
+              agente, além do que for compartilhado entre todos.
+            </p>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => handleSelectConnectionTab(null)}
+                className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors duration-150 ${
+                  activeConnectionId === null
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-card text-foreground border-border hover:bg-muted'
+                }`}
+              >
+                Compartilhado
+              </button>
+              {connections.map((conn) => {
+                const label = conn.phone_number ? `+${conn.phone_number}` : conn.instance_name;
+                const isActive = activeConnectionId === conn.id;
+                return (
+                  <button
+                    key={conn.id}
+                    type="button"
+                    onClick={() => handleSelectConnectionTab(conn.id)}
+                    className={`px-4 py-2 rounded-full text-sm font-medium border transition-colors duration-150 ${
+                      isActive
+                        ? 'bg-primary text-white border-primary'
+                        : 'bg-card text-foreground border-border hover:bg-muted'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
@@ -463,6 +550,24 @@ export default function ConhecimentoPage() {
                     : new Date(entry.created_at).toLocaleDateString('pt-BR')}
                   {!entry.active && ' · inativo (a IA ignora este conteúdo)'}
                 </p>
+
+                {canManage && connections.length > 1 && (
+                  <div className="mt-3 pt-3 border-t border-border">
+                    <label className="block text-xs text-muted-foreground mb-1">Mover para</label>
+                    <select
+                      value={entry.whatsapp_connection_id || ''}
+                      onChange={(e) => handleMoveEntry(entry.id, e.target.value || null)}
+                      className="w-full px-3 py-1.5 border border-border rounded-lg bg-white text-sm text-foreground"
+                    >
+                      <option value="">Compartilhado (todos os agentes)</option>
+                      {connections.map((conn) => (
+                        <option key={conn.id} value={conn.id}>
+                          {conn.phone_number ? `+${conn.phone_number}` : conn.instance_name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             ))
           )}

@@ -271,18 +271,29 @@ const PRODUCTS_TOP_N = 30;
 async function buildKnowledgeContext(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string,
-  queryText: string
+  queryText: string,
+  connectionId: string | null
 ): Promise<{
   contextText: string;
   productImages: Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>;
   catalogProducts: { productId: string; name: string }[];
 }> {
+  // Base de Conhecimento por agente (Construtor de Agente > número de
+  // WhatsApp): agente específico enxerga as entradas dele + as
+  // compartilhadas (whatsapp_connection_id NULL); workspace de 1 número só
+  // (connectionId sempre null aqui) sempre viu e continua vendo só as
+  // compartilhadas, que são 100% do conteúdo já cadastrado.
+  const knowledgeQuery = admin
+    .from('knowledge_entries')
+    .select('title, category, content')
+    .eq('workspace_id', workspaceId)
+    .eq('active', true);
+
   const [{ data: allEntries }, { data: allProducts }] = await Promise.all([
-    admin
-      .from('knowledge_entries')
-      .select('title, category, content')
-      .eq('workspace_id', workspaceId)
-      .eq('active', true)
+    (connectionId
+      ? knowledgeQuery.or(`whatsapp_connection_id.eq.${connectionId},whatsapp_connection_id.is.null`)
+      : knowledgeQuery.is('whatsapp_connection_id', null)
+    )
       .order('updated_at', { ascending: false })
       .limit(KNOWLEDGE_POOL_LIMIT),
     admin
@@ -933,7 +944,7 @@ async function tryAutoReply({
       .join(' ');
 
     const { contextText: knowledgeContext, productImages, catalogProducts } = profile.use_knowledge_base
-      ? await buildKnowledgeContext(admin, workspaceId, retrievalQuery)
+      ? await buildKnowledgeContext(admin, workspaceId, retrievalQuery, connection?.id ?? null)
       : {
           contextText: '',
           productImages: new Map<string, { productId: string; imageUrl: string; purchaseUrl: string | null }>(),

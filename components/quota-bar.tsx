@@ -21,15 +21,15 @@ export function QuotaBar({ label, current, max, hint, className = '' }: QuotaBar
 
   return (
     <div className={className}>
-      <div className="flex items-center justify-between gap-3 mb-2">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 mb-2">
         <p className="text-sm font-medium text-foreground">{label}</p>
-        <p className="text-sm font-semibold text-foreground whitespace-nowrap">
+        <p className="text-sm font-semibold text-foreground">
           {hasLimit ? (
-            <>
+            <span className="whitespace-nowrap">
               {current.toLocaleString('pt-BR')}{' '}
               <span className="text-muted-foreground font-normal">de</span>{' '}
               {(max as number).toLocaleString('pt-BR')}
-            </>
+            </span>
           ) : (
             <span className="text-muted-foreground font-normal">sem limite configurado</span>
           )}

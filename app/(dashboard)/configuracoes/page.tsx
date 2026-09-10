@@ -1085,14 +1085,14 @@ export default function ConfiguracoesPage() {
           )}
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-            <div className="p-4 border border-border rounded-xl bg-muted">
+            <div className="p-4 border border-border rounded-2xl bg-muted">
               <QuotaBar
                 label="Produtos cadastrados"
                 current={productCount}
                 max={workspaceBilling?.plan?.product_limit ?? null}
               />
             </div>
-            <div className="p-4 border border-border rounded-xl bg-muted">
+            <div className="p-4 border border-border rounded-2xl bg-muted">
               <QuotaBar
                 label="Membros da equipe"
                 current={members.length}
@@ -1101,7 +1101,7 @@ export default function ConfiguracoesPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-4 flex-wrap mb-6 p-4 border border-border rounded-xl bg-muted">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 p-4 border border-border rounded-2xl bg-muted">
             <div>
               <p className="text-sm text-muted-foreground mb-1.5">Status da assinatura</p>
               {workspaceBilling &&
@@ -1110,7 +1110,7 @@ export default function ConfiguracoesPage() {
                   return <StatusBadge label={badge.label} active={badge.active} tone={badge.tone} />;
                 })()}
             </div>
-            <div className="text-right">
+            <div className="sm:text-right">
               <p className="text-sm text-muted-foreground mb-1.5">Vencimento</p>
               {(() => {
                 const tone = subscriptionDueTone(workspaceBilling?.subscription_expires_at ?? null);

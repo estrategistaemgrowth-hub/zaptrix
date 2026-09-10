@@ -7,6 +7,68 @@ export const PROVIDER_LABELS: Record<AiProvider, string> = {
   anthropic: 'Anthropic (Claude)',
 };
 
+export interface ProviderInfo {
+  /** Onde gerar/gerenciar a chave de API. */
+  keysUrl: string;
+  tag: 'free' | 'free-tier' | 'paid';
+  tagLabel: string;
+  note: string;
+  steps: string[];
+}
+
+/**
+ * Guia de "como conseguir a API key" por provedor — mostrado em Configurações
+ * > IA. Tags e notas são um retrato geral (o modelo de preço de cada
+ * provedor muda com o tempo); o link sempre aponta pra página oficial, onde
+ * o valor exato e atualizado está.
+ */
+export const PROVIDER_INFO: Record<AiProvider, ProviderInfo> = {
+  groq: {
+    keysUrl: 'https://console.groq.com/keys',
+    tag: 'free',
+    tagLabel: 'Tem plano grátis',
+    note: 'A Groq costuma liberar uso gratuito com limites generosos de requisições — boa opção pra começar sem custo nenhum.',
+    steps: [
+      'Crie uma conta gratuita em console.groq.com',
+      'No menu lateral, entre em "API Keys"',
+      'Clique em "Create API Key", dê um nome e copie a chave (começa com "gsk_")',
+    ],
+  },
+  gemini: {
+    keysUrl: 'https://aistudio.google.com/app/apikey',
+    tag: 'free-tier',
+    tagLabel: 'Cota grátis',
+    note: 'O Google AI Studio libera uma cota diária gratuita pros modelos Gemini Flash — passar da cota vira cobrança.',
+    steps: [
+      'Entre em aistudio.google.com com uma conta Google',
+      'Clique em "Get API key" / "Criar chave de API"',
+      'Escolha (ou crie) um projeto do Google Cloud e copie a chave gerada',
+    ],
+  },
+  openai: {
+    keysUrl: 'https://platform.openai.com/api-keys',
+    tag: 'paid',
+    tagLabel: 'Pago',
+    note: 'A OpenAI cobra por uso desde o início — é preciso cadastrar um cartão e adicionar créditos antes de usar.',
+    steps: [
+      'Crie uma conta em platform.openai.com',
+      'Vá em "Billing" e adicione um método de pagamento + créditos',
+      'Vá em "API keys", clique em "Create new secret key" e copie (começa com "sk-")',
+    ],
+  },
+  anthropic: {
+    keysUrl: 'https://console.anthropic.com/settings/keys',
+    tag: 'paid',
+    tagLabel: 'Pago',
+    note: 'A Anthropic cobra por uso desde o início — é preciso adicionar créditos na conta antes de gerar tráfego real.',
+    steps: [
+      'Crie uma conta em console.anthropic.com',
+      'Vá em "Billing" e adicione créditos',
+      'Vá em "API Keys", clique em "Create Key" e copie (começa com "sk-ant-")',
+    ],
+  },
+};
+
 export const PROVIDER_MODELS: Record<AiProvider, { id: string; label: string }[]> = {
   gemini: [
     { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash (rápido e barato)' },

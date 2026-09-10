@@ -4,7 +4,8 @@ import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { PROVIDER_LABELS, PROVIDER_MODELS, AiProvider } from '@/lib/ai-models';
+import { PROVIDER_LABELS, PROVIDER_MODELS, PROVIDER_INFO, AiProvider } from '@/lib/ai-models';
+import { ApiKeyGuideModal } from '@/components/api-key-guide-modal';
 import { WhatsappQrModal } from '@/components/whatsapp-qr-modal';
 import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
@@ -173,6 +174,7 @@ export default function ConfiguracoesPage() {
 
   const [credentials, setCredentials] = useState<LlmCredential[]>([]);
   const [showAiForm, setShowAiForm] = useState(false);
+  const [showApiKeyGuide, setShowApiKeyGuide] = useState(false);
   const [aiProvider, setAiProvider] = useState<AiProvider>('openai');
   const [aiModel, setAiModel] = useState(PROVIDER_MODELS.openai[0].id);
   const [apiKey, setApiKey] = useState('');
@@ -1478,22 +1480,43 @@ export default function ConfiguracoesPage() {
               <Zap className="w-5 h-5 text-primary" />
               <h2 className="text-xl font-semibold text-foreground">API Key da IA</h2>
             </div>
-            {!showAiForm && (
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setShowAiForm(true)}
-                className="flex items-center gap-2 px-4 py-2 btn-gradient text-sm font-medium"
+                onClick={() => setShowApiKeyGuide(true)}
+                className="px-4 py-2 border border-border text-foreground rounded-xl font-medium text-sm hover:bg-muted"
               >
-                <Plus className="w-4 h-4" />
-                Adicionar credencial
+                Guia de uso
               </button>
-            )}
+              {!showAiForm && (
+                <button
+                  onClick={() => setShowAiForm(true)}
+                  className="flex items-center gap-2 px-4 py-2 btn-gradient text-sm font-medium"
+                >
+                  <Plus className="w-4 h-4" />
+                  Adicionar credencial
+                </button>
+              )}
+            </div>
           </div>
 
           {showAiForm && (
             <form onSubmit={handleAddCredential} className="mb-4 p-4 bg-muted rounded-xl space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-foreground mb-2">Provider</label>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="block text-sm font-medium text-foreground">Provider</label>
+                    <span
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium ${
+                        PROVIDER_INFO[aiProvider].tag === 'free'
+                          ? 'bg-success/10 text-success'
+                          : PROVIDER_INFO[aiProvider].tag === 'free-tier'
+                          ? 'bg-amber-100 text-amber-700'
+                          : 'bg-muted text-muted-foreground'
+                      }`}
+                    >
+                      {PROVIDER_INFO[aiProvider].tagLabel}
+                    </span>
+                  </div>
                   <select
                     value={aiProvider}
                     onChange={(e) => {
@@ -1527,7 +1550,17 @@ export default function ConfiguracoesPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-foreground mb-2">API Key</label>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="block text-sm font-medium text-foreground">API Key</label>
+                  <a
+                    href={PROVIDER_INFO[aiProvider].keysUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-medium text-primary hover:underline"
+                  >
+                    Onde conseguir a chave da {PROVIDER_LABELS[aiProvider]}?
+                  </a>
+                </div>
                 <div className="relative">
                   <input
                     type={showApiKey ? 'text' : 'password'}
@@ -1607,6 +1640,8 @@ export default function ConfiguracoesPage() {
         )}
         </div>
       </div>
+
+      {showApiKeyGuide && <ApiKeyGuideModal onClose={() => setShowApiKeyGuide(false)} />}
     </div>
   );
 }

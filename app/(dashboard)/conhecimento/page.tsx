@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
-import { Upload, Trash2, FileText, BookOpen, ToggleLeft, ToggleRight } from 'lucide-react';
+import { Upload, Trash2, FileText, BookOpen, ToggleLeft, ToggleRight, Link2, RefreshCw, Loader2 } from 'lucide-react';
 import { SkeletonCard } from '@/components/skeleton';
 
 interface KnowledgeEntry {
@@ -13,6 +13,8 @@ interface KnowledgeEntry {
   content: string;
   active: boolean;
   created_at: string;
+  source_url: string | null;
+  source_fetched_at: string | null;
 }
 
 export default function ConhecimentoPage() {
@@ -24,6 +26,12 @@ export default function ConhecimentoPage() {
   const [formData, setFormData] = useState({ title: '', category: '', content: '' });
   const [submitting, setSubmitting] = useState(false);
   const [canManage, setCanManage] = useState(true);
+  const [addMode, setAddMode] = useState<'manual' | 'url'>('manual');
+  const [sourceUrl, setSourceUrl] = useState('');
+  const [fetchingUrl, setFetchingUrl] = useState(false);
+  const [urlError, setUrlError] = useState('');
+  const [pendingSourceUrl, setPendingSourceUrl] = useState<string | null>(null);
+  const [refreshingId, setRefreshingId] = useState<string | null>(null);
   const supabase = createClient();
 
   useEffect(() => {
@@ -81,6 +89,8 @@ export default function ConhecimentoPage() {
         category: formData.category || null,
         content: formData.content,
         active: true,
+        source_url: pendingSourceUrl,
+        source_fetched_at: pendingSourceUrl ? new Date().toISOString() : null,
       },
     ]);
 
@@ -92,9 +102,77 @@ export default function ConhecimentoPage() {
     }
 
     setFormData({ title: '', category: '', content: '' });
+    setPendingSourceUrl(null);
+    setSourceUrl('');
+    setAddMode('manual');
     setShowForm(false);
     setSubmitting(false);
     await loadEntries(workspaceId);
+  }
+
+  async function handleFetchUrl() {
+    if (!sourceUrl.trim()) return;
+
+    setFetchingUrl(true);
+    setUrlError('');
+
+    try {
+      const res = await fetch('/api/knowledge/fetch-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: sourceUrl.trim() }),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        setUrlError(result.error || 'Erro ao buscar a URL');
+        return;
+      }
+
+      setFormData({ title: result.title, category: formData.category, content: result.content });
+      setPendingSourceUrl(sourceUrl.trim());
+    } catch (err) {
+      console.error('Erro ao buscar URL:', err);
+      setUrlError('Erro inesperado ao buscar a URL');
+    } finally {
+      setFetchingUrl(false);
+    }
+  }
+
+  async function handleRefreshFromUrl(entry: KnowledgeEntry) {
+    if (!entry.source_url || !workspaceId) return;
+
+    setRefreshingId(entry.id);
+    try {
+      const res = await fetch('/api/knowledge/fetch-url', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url: entry.source_url }),
+      });
+      const result = await res.json();
+
+      if (!res.ok) {
+        alert(result.error || 'Erro ao atualizar da URL');
+        return;
+      }
+
+      const { error: updateError } = await supabase
+        .from('knowledge_entries')
+        .update({ content: result.content, source_fetched_at: new Date().toISOString() })
+        .eq('id', entry.id);
+
+      if (updateError) {
+        alert('Erro ao salvar conteúdo atualizado: ' + updateError.message);
+        return;
+      }
+
+      await loadEntries(workspaceId);
+    } catch (err) {
+      console.error('Erro ao atualizar entrada da URL:', err);
+      alert('Erro inesperado ao atualizar');
+    } finally {
+      setRefreshingId(null);
+    }
   }
 
   async function handleToggleActive(entry: KnowledgeEntry) {
@@ -150,6 +228,64 @@ export default function ConhecimentoPage() {
 
         {showForm && (
           <div className="bg-card border border-border rounded-2xl shadow-sm p-6 mb-8">
+            <div className="flex gap-2 mb-4">
+              <button
+                type="button"
+                onClick={() => setAddMode('manual')}
+                className={`px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  addMode === 'manual'
+                    ? 'bg-primary text-white border-primary'
+                    : 'border-border text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                Texto manual
+              </button>
+              <button
+                type="button"
+                onClick={() => setAddMode('url')}
+                className={`flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium border ${
+                  addMode === 'url'
+                    ? 'bg-primary text-white border-primary'
+                    : 'border-border text-muted-foreground hover:bg-muted'
+                }`}
+              >
+                <Link2 className="w-3.5 h-3.5" />
+                Buscar de uma URL
+              </button>
+            </div>
+
+            {addMode === 'url' && (
+              <div className="mb-4 p-4 bg-muted rounded-xl space-y-2">
+                <label className="block text-sm font-medium text-foreground">
+                  URL da página (ex: FAQ ou política de troca do seu site)
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={sourceUrl}
+                    onChange={(e) => setSourceUrl(e.target.value)}
+                    placeholder="https://sualoja.com.br/politica-de-troca"
+                    className="flex-1 px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleFetchUrl}
+                    disabled={fetchingUrl || !sourceUrl.trim()}
+                    className="flex items-center gap-2 px-4 py-2 btn-gradient font-medium disabled:opacity-50 whitespace-nowrap"
+                  >
+                    {fetchingUrl && <Loader2 className="w-4 h-4 animate-spin" />}
+                    {fetchingUrl ? 'Buscando...' : 'Buscar'}
+                  </button>
+                </div>
+                {urlError && <p className="text-sm text-destructive">{urlError}</p>}
+                {pendingSourceUrl && (
+                  <p className="text-sm text-success">
+                    Conteúdo importado — revise abaixo antes de salvar.
+                  </p>
+                )}
+              </div>
+            )}
+
             <form onSubmit={handleAddEntry} className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div>
@@ -204,7 +340,14 @@ export default function ConhecimentoPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setShowForm(false)}
+                  onClick={() => {
+                    setShowForm(false);
+                    setAddMode('manual');
+                    setSourceUrl('');
+                    setPendingSourceUrl(null);
+                    setUrlError('');
+                    setFormData({ title: '', category: '', content: '' });
+                  }}
                   className="px-6 py-2 border border-border text-foreground rounded-lg font-medium hover:bg-background"
                 >
                   Cancelar
@@ -261,6 +404,16 @@ export default function ConhecimentoPage() {
                   </div>
                   {canManage && (
                     <div className="flex items-center gap-1 flex-shrink-0">
+                      {entry.source_url && (
+                        <button
+                          onClick={() => handleRefreshFromUrl(entry)}
+                          disabled={refreshingId === entry.id}
+                          title="Buscar conteúdo atualizado da URL"
+                          className="p-1 text-muted-foreground hover:text-primary disabled:opacity-50"
+                        >
+                          <RefreshCw className={`w-4 h-4 ${refreshingId === entry.id ? 'animate-spin' : ''}`} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleToggleActive(entry)}
                         title={entry.active ? 'Desativar' : 'Ativar'}
@@ -284,8 +437,22 @@ export default function ConhecimentoPage() {
 
                 <p className="text-sm text-muted-foreground line-clamp-3 mb-3">{entry.content}</p>
 
+                {entry.source_url && (
+                  <a
+                    href={entry.source_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 text-xs text-primary hover:underline mb-1 truncate"
+                  >
+                    <Link2 className="w-3 h-3 flex-shrink-0" />
+                    {entry.source_url}
+                  </a>
+                )}
+
                 <p className="text-xs text-muted-foreground">
-                  {new Date(entry.created_at).toLocaleDateString('pt-BR')}
+                  {entry.source_fetched_at
+                    ? `Atualizado da URL em ${new Date(entry.source_fetched_at).toLocaleDateString('pt-BR')}`
+                    : new Date(entry.created_at).toLocaleDateString('pt-BR')}
                   {!entry.active && ' · inativo (a IA ignora este conteúdo)'}
                 </p>
               </div>

@@ -45,6 +45,7 @@ interface Workspace {
   subscription_status: 'trial' | 'active' | 'overdue' | 'canceled';
   subscription_expires_at: string | null;
   is_complimentary: boolean;
+  extra_whatsapp_connections: number;
   created_at: string;
   plan: Plan | null;
   ownerEmail: string | null;

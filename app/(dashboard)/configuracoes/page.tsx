@@ -98,6 +98,7 @@ interface WorkspaceBilling {
   subscription_status: 'trial' | 'active' | 'overdue' | 'canceled';
   subscription_expires_at: string | null;
   is_complimentary: boolean;
+  extra_whatsapp_connections: number;
   plan: PlanInfo | null;
 }
 
@@ -211,6 +212,10 @@ export default function ConfiguracoesPage() {
   const [aiProfileId, setAiProfileId] = useState<string | null>(null);
   const [handoffEnabled, setHandoffEnabled] = useState(false);
   const [handoffTriggerRules, setHandoffTriggerRules] = useState('');
+  /** connection_id -> lista de user_id que participam do rodízio daquele
+   *  número — vazio pra uma conexão = rodízio usa todos os atendentes/admins
+   *  do workspace (comportamento de sempre, sem filtro por número). */
+  const [connectionAttendants, setConnectionAttendants] = useState<Record<string, string[]>>({});
   const [savingHandoff, setSavingHandoff] = useState(false);
   const [handoffError, setHandoffError] = useState('');
 
@@ -283,7 +288,7 @@ export default function ConfiguracoesPage() {
         supabase
           .from('workspaces')
           .select(
-            'plan_id, subscription_status, subscription_expires_at, is_complimentary, plans(id, name, price_cents, product_limit, member_limit)'
+            'plan_id, subscription_status, subscription_expires_at, is_complimentary, extra_whatsapp_connections, plans(id, name, price_cents, product_limit, member_limit)'
           )
           .eq('id', wsId)
           .maybeSingle(),
@@ -305,6 +310,7 @@ export default function ConfiguracoesPage() {
         subscription_status: wsData.subscription_status,
         subscription_expires_at: wsData.subscription_expires_at,
         is_complimentary: wsData.is_complimentary,
+        extra_whatsapp_connections: wsData.extra_whatsapp_connections,
         plan,
       });
     }
@@ -491,6 +497,39 @@ export default function ConfiguracoesPage() {
     );
 
     setConnections(withUsage);
+
+    if (rows.length > 0) {
+      const { data: attendantRows } = await supabase
+        .from('connection_attendants')
+        .select('connection_id, user_id')
+        .in('connection_id', rows.map((c) => c.id));
+
+      const grouped: Record<string, string[]> = {};
+      (attendantRows || []).forEach((row) => {
+        grouped[row.connection_id] = [...(grouped[row.connection_id] || []), row.user_id];
+      });
+      setConnectionAttendants(grouped);
+    }
+  }
+
+  async function toggleConnectionAttendant(connectionId: string, userId: string) {
+    const current = connectionAttendants[connectionId] || [];
+    const isIn = current.includes(userId);
+
+    if (isIn) {
+      await supabase
+        .from('connection_attendants')
+        .delete()
+        .eq('connection_id', connectionId)
+        .eq('user_id', userId);
+    } else {
+      await supabase.from('connection_attendants').insert([{ connection_id: connectionId, user_id: userId }]);
+    }
+
+    setConnectionAttendants((prev) => ({
+      ...prev,
+      [connectionId]: isIn ? current.filter((id) => id !== userId) : [...current, userId],
+    }));
   }
 
   async function loadCredentials(wsId: string) {
@@ -1159,7 +1198,7 @@ export default function ConfiguracoesPage() {
 
         {activeSection === 'whatsapp' && (
         <div className="bg-card border border-border rounded-2xl shadow-sm p-6">
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between mb-1">
             <div className="flex items-center gap-3">
               <Smartphone className="w-5 h-5 text-primary" />
               <h2 className="text-xl font-semibold text-foreground">WhatsApp</h2>
@@ -1167,14 +1206,27 @@ export default function ConfiguracoesPage() {
             {!qrCode && (
               <button
                 onClick={handleConnectWhatsapp}
-                disabled={connecting}
-                className="flex items-center gap-2 px-4 py-2 btn-gradient text-sm font-medium"
+                disabled={connecting || (workspaceBilling ? connections.length >= 1 + workspaceBilling.extra_whatsapp_connections : false)}
+                title={
+                  workspaceBilling && connections.length >= 1 + workspaceBilling.extra_whatsapp_connections
+                    ? 'Limite de números atingido — fale com o suporte para contratar mais uma instância'
+                    : undefined
+                }
+                className="flex items-center gap-2 px-4 py-2 btn-gradient text-sm font-medium disabled:opacity-50"
               >
                 <Plus className="w-4 h-4" />
                 {connecting ? 'Gerando QR code...' : 'Conectar WhatsApp'}
               </button>
             )}
           </div>
+
+          {workspaceBilling && (
+            <p className="text-xs text-muted-foreground mb-5">
+              {connections.length} de {1 + workspaceBilling.extra_whatsapp_connections} número(s) conectado(s)
+              {connections.length >= 1 + workspaceBilling.extra_whatsapp_connections &&
+                ' — fale com o suporte para contratar uma instância adicional (R$39,90/mês)'}
+            </p>
+          )}
 
           <div className="mb-4 p-4 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-3">
             <AlertTriangle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -1447,6 +1499,52 @@ export default function ConfiguracoesPage() {
               {savingHandoff ? 'Salvando...' : 'Salvar'}
             </button>
           </form>
+
+          {connections.length > 1 && (
+            <div className="mt-6 pt-6 border-t border-border">
+              <h3 className="text-sm font-semibold text-foreground mb-1">Atendentes por número</h3>
+              <p className="text-xs text-muted-foreground mb-4">
+                Seu workspace tem mais de um número de WhatsApp conectado. Escolha quais atendentes
+                participam do rodízio de cada número — sem nenhum marcado, o rodízio usa todos os
+                atendentes/admins do workspace (comportamento padrão).
+              </p>
+              <div className="space-y-4">
+                {connections.map((conn) => (
+                  <div key={conn.id} className="p-4 border border-border rounded-xl bg-muted">
+                    <p className="text-sm font-medium text-foreground mb-2">
+                      {conn.phone_number ? `+${conn.phone_number}` : conn.instance_name}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {members
+                        .filter((m) => m.role === 'atendente' || m.role === 'admin')
+                        .map((m) => {
+                          const active = (connectionAttendants[conn.id] || []).includes(m.user_id);
+                          return (
+                            <button
+                              key={m.user_id}
+                              type="button"
+                              onClick={() => toggleConnectionAttendant(conn.id, m.user_id)}
+                              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors duration-150 ${
+                                active
+                                  ? 'bg-primary text-white border-primary'
+                                  : 'border-border text-muted-foreground hover:bg-white'
+                              }`}
+                            >
+                              {m.email || 'Membro'}
+                            </button>
+                          );
+                        })}
+                      {members.filter((m) => m.role === 'atendente' || m.role === 'admin').length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Nenhum atendente/admin cadastrado ainda — adicione em Membros.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div
             className={`mt-6 p-4 rounded-xl border flex items-start gap-3 ${

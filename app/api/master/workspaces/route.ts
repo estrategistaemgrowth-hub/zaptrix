@@ -254,7 +254,8 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PATCH(request: NextRequest) {
-  const { workspaceId, planId, expiresAt, status, statusReason, isComplimentary } = await request.json();
+  const { workspaceId, planId, expiresAt, status, statusReason, isComplimentary, extraWhatsappConnections } =
+    await request.json();
 
   if (!workspaceId) {
     return NextResponse.json({ error: 'workspaceId obrigatório' }, { status: 400 });
@@ -274,6 +275,9 @@ export async function PATCH(request: NextRequest) {
   if (planId !== undefined) updates.plan_id = planId || null;
   if (expiresAt !== undefined) updates.subscription_expires_at = expiresAt || null;
   if (isComplimentary !== undefined) updates.is_complimentary = !!isComplimentary;
+  if (extraWhatsappConnections !== undefined) {
+    updates.extra_whatsapp_connections = Math.max(0, parseInt(extraWhatsappConnections, 10) || 0);
+  }
   if (status !== undefined) {
     updates.status = status;
     updates.status_changed_at = new Date().toISOString();

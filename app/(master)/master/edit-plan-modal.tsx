@@ -18,6 +18,7 @@ interface WorkspaceLite {
   plan_id: string | null;
   subscription_expires_at: string | null;
   is_complimentary: boolean;
+  extra_whatsapp_connections: number;
 }
 
 interface Props {
@@ -40,6 +41,7 @@ export function EditPlanModal({ workspace, plans, onClose, onSaved }: Props) {
     workspace.subscription_expires_at ? workspace.subscription_expires_at.slice(0, 10) : ''
   );
   const [isComplimentary, setIsComplimentary] = useState(workspace.is_complimentary);
+  const [extraWhatsapp, setExtraWhatsapp] = useState(workspace.extra_whatsapp_connections);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
 
@@ -60,6 +62,7 @@ export function EditPlanModal({ workspace, plans, onClose, onSaved }: Props) {
           planId: planId || null,
           expiresAt: expiresAt || null,
           isComplimentary,
+          extraWhatsappConnections: extraWhatsapp,
         }),
       });
 
@@ -133,6 +136,23 @@ export function EditPlanModal({ workspace, plans, onClose, onSaved }: Props) {
             />
             Acesso privilegiado (cortesia/parceria — nunca bloqueia por vencimento)
           </label>
+
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-2">
+              Instâncias extras de WhatsApp (R$39,90/mês cada)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={extraWhatsapp}
+              onChange={(e) => setExtraWhatsapp(Math.max(0, parseInt(e.target.value, 10) || 0))}
+              className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
+            />
+            <p className="text-xs text-muted-foreground mt-1">
+              A loja tem direito a 1 número gratuito por padrão — cada instância adicional aqui libera
+              mais 1 conexão simultânea de WhatsApp.
+            </p>
+          </div>
         </div>
 
         <div className="flex gap-3 p-6 border-t border-border">

@@ -639,6 +639,7 @@ async function checkHumanHandoff(
   admin: ReturnType<typeof createAdminClient>,
   workspaceId: string,
   conversationId: string,
+  connectionId: string | null,
   profile: { handoff_enabled: boolean | null; handoff_trigger_rules: string | null },
   provider: AiProvider,
   apiKey: string,
@@ -682,12 +683,36 @@ async function checkHumanHandoff(
 
     await admin.from('conversations').update({ ai_enabled: false }).eq('id', conversationId);
 
-    const { data: attendants } = await admin
+    // Roleta por número (add-on de múltiplas conexões de WhatsApp): se o
+    // lojista configurou quais atendentes participam do rodízio deste número
+    // específico (connection_attendants), restringe a esses; sem nenhuma
+    // linha configurada pra essa conexão, cai no comportamento de sempre
+    // (todos os atendentes/admins do workspace).
+    let attendantIds: string[] | null = null;
+
+    if (connectionId) {
+      const { data: connectionAttendants } = await admin
+        .from('connection_attendants')
+        .select('user_id')
+        .eq('connection_id', connectionId);
+
+      if (connectionAttendants && connectionAttendants.length > 0) {
+        attendantIds = connectionAttendants.map((c) => c.user_id);
+      }
+    }
+
+    let attendantsQuery = admin
       .from('workspace_members')
       .select('user_id')
       .eq('workspace_id', workspaceId)
       .in('role', ['atendente', 'admin'])
       .order('created_at', { ascending: true });
+
+    if (attendantIds) {
+      attendantsQuery = attendantsQuery.in('user_id', attendantIds);
+    }
+
+    const { data: attendants } = await attendantsQuery;
 
     if (!attendants || attendants.length === 0) return;
 
@@ -768,7 +793,7 @@ async function tryAutoReply({
 
     const { data: connection } = await admin
       .from('whatsapp_connections')
-      .select('created_at, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
+      .select('id, created_at, min_delay_seconds, max_delay_seconds, daily_message_limit, warmup_mode')
       .eq('instance_name', instanceName)
       .maybeSingle();
 
@@ -959,6 +984,7 @@ async function tryAutoReply({
       admin,
       workspaceId,
       conversationId,
+      connection?.id || null,
       profile,
       credential.provider as AiProvider,
       apiKey,
@@ -1118,7 +1144,7 @@ export async function POST(request: NextRequest) {
 
     const { data: connection, error: connectionError } = await admin
       .from('whatsapp_connections')
-      .select('workspace_id, webhook_secret')
+      .select('id, workspace_id, webhook_secret')
       .eq('instance_name', instanceName)
       .maybeSingle();
 
@@ -1179,7 +1205,7 @@ export async function POST(request: NextRequest) {
     // e marca reopened_count (vira a tag "Reaberta" na UI).
     const { data: existingConversation } = await admin
       .from('conversations')
-      .select('id, status, unread_count, reopened_count')
+      .select('id, status, unread_count, reopened_count, whatsapp_connection_id')
       .eq('workspace_id', workspaceId)
       .eq('contact_id', contactId)
       .order('created_at', { ascending: false })
@@ -1199,13 +1225,22 @@ export async function POST(request: NextRequest) {
           .update({
             status: 'open',
             reopened_count: (existingConversation.reopened_count || 0) + 1,
+            whatsapp_connection_id: connection.id,
           })
+          .eq('id', conversationId);
+      } else if (existingConversation.whatsapp_connection_id !== connection.id) {
+        // Mantém a conversa marcada com o número por onde ela realmente está
+        // acontecendo agora — relevante quando o workspace tem mais de 1
+        // conexão de WhatsApp (add-on pago) e o cliente troca de número.
+        await admin
+          .from('conversations')
+          .update({ whatsapp_connection_id: connection.id })
           .eq('id', conversationId);
       }
     } else {
       const { data: newConversation, error: createConvError } = await admin
         .from('conversations')
-        .insert([{ workspace_id: workspaceId, contact_id: contactId, status: 'open' }])
+        .insert([{ workspace_id: workspaceId, contact_id: contactId, status: 'open', whatsapp_connection_id: connection.id }])
         .select('id')
         .single();
 

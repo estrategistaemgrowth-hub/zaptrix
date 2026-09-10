@@ -45,6 +45,7 @@ interface Conversation {
   last_message_at: string | null;
   unread_count: number | null;
   assigned_to: string | null;
+  whatsapp_connection_id: string | null;
   contact: {
     name: string | null;
     push_name: string | null;
@@ -194,6 +195,13 @@ export default function AtendimentoPage() {
   const [memberDirectory, setMemberDirectory] = useState<Record<string, string>>({});
   const [whatsappDisconnected, setWhatsappDisconnected] = useState(false);
   const [showInfoPanel, setShowInfoPanel] = useState(false);
+  /** Lista de números conectados — usada só pra mostrar abas de filtro quando
+   *  o workspace tem mais de 1 (add-on pago de múltiplas instâncias). Com 1
+   *  só número (o caso comum), nenhuma aba aparece. */
+  const [connectionsList, setConnectionsList] = useState<
+    { id: string; phone_number: string | null; instance_name: string }[]
+  >([]);
+  const [connectionFilter, setConnectionFilter] = useState<string | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const supabase = createClient();
@@ -273,8 +281,10 @@ export default function AtendimentoPage() {
   async function loadWhatsappStatus(wsId: string) {
     const { data: connections } = await supabase
       .from('whatsapp_connections')
-      .select('status')
+      .select('id, status, phone_number, instance_name')
       .eq('workspace_id', wsId);
+
+    setConnectionsList((connections || []).map((c) => ({ id: c.id, phone_number: c.phone_number, instance_name: c.instance_name })));
 
     const hasConnection = (connections || []).length > 0;
     const isConnected = (connections || []).some((c) => c.status === 'connected');
@@ -316,7 +326,7 @@ export default function AtendimentoPage() {
     const { data, error: loadError } = await supabase
       .from('conversations')
       .select(
-        'id, status, needs_review, reopened_count, ai_enabled, last_message_at, unread_count, assigned_to, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
+        'id, status, needs_review, reopened_count, ai_enabled, last_message_at, unread_count, assigned_to, whatsapp_connection_id, contact:contacts(name, push_name, phone, ai_memory), messages(content, sender_type, created_at)'
       )
       .eq('workspace_id', wsId)
       .order('last_message_at', { ascending: false, nullsFirst: false })
@@ -659,6 +669,10 @@ export default function AtendimentoPage() {
     handleChangeStatus(conversationId, status);
   }
 
+  const visibleConversations = connectionFilter
+    ? conversations.filter((c) => c.whatsapp_connection_id === connectionFilter)
+    : conversations;
+
   return (
     <div className="p-2 flex flex-col h-[calc(100vh-2rem)]">
       {whatsappDisconnected && (
@@ -679,7 +693,7 @@ export default function AtendimentoPage() {
           <div>
             <h1 className="text-2xl font-bold text-foreground">Atendimento</h1>
             <p className="text-sm text-muted-foreground">
-              {conversations.length} conversas
+              {visibleConversations.length} conversas
               {conversations.length >= CONVERSATIONS_FETCH_LIMIT &&
                 ' (mostrando as mais recentes — conversas antigas paradas podem não aparecer)'}
             </p>
@@ -711,6 +725,34 @@ export default function AtendimentoPage() {
           </button>
         </div>
       </div>
+
+      {connectionsList.length > 1 && (
+        <div className="flex items-center gap-2 flex-wrap mb-4">
+          <button
+            onClick={() => setConnectionFilter(null)}
+            className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors duration-150 ${
+              connectionFilter === null
+                ? 'bg-primary text-white border-primary'
+                : 'border-border text-muted-foreground hover:bg-muted'
+            }`}
+          >
+            Todos os números
+          </button>
+          {connectionsList.map((conn) => (
+            <button
+              key={conn.id}
+              onClick={() => setConnectionFilter(conn.id)}
+              className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-colors duration-150 ${
+                connectionFilter === conn.id
+                  ? 'bg-primary text-white border-primary'
+                  : 'border-border text-muted-foreground hover:bg-muted'
+              }`}
+            >
+              {conn.phone_number ? `+${conn.phone_number}` : conn.instance_name}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
         <div className="mb-4 p-4 bg-red-50 border border-red-200 rounded-xl text-sm text-red-700">
@@ -747,7 +789,7 @@ export default function AtendimentoPage() {
                 </p>
               </div>
             ) : (
-              conversations.map((conv) => {
+              visibleConversations.map((conv) => {
                 const label = contactLabel(conv.contact);
                 const initial = label.charAt(0).toUpperCase();
                 return (
@@ -834,7 +876,7 @@ export default function AtendimentoPage() {
         ) : (
         <div className="flex-1 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4 overflow-hidden">
           {KANBAN_COLUMNS.map((col) => {
-            const columnConversations = conversations.filter((c) => c.status === col.status);
+            const columnConversations = visibleConversations.filter((c) => c.status === col.status);
             const otherColumns = KANBAN_COLUMNS.filter((c) => c.status !== col.status);
 
             return (

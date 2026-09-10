@@ -1416,7 +1416,7 @@ export default function AtendimentoPage() {
                           onClick={() => setShowQuickRepliesPopover(false)}
                           className="fixed inset-0 z-10 cursor-default"
                         />
-                        <div className="absolute bottom-full left-0 mb-2 w-72 max-h-80 flex flex-col bg-card border border-border rounded-xl shadow-lg z-20 animate-fade-in overflow-hidden">
+                        <div className="absolute bottom-full left-0 mb-2 w-72 max-h-80 flex flex-col bg-card border border-border rounded-lg shadow-lg z-20 animate-fade-in overflow-hidden">
                           <div className="px-3.5 py-2.5 border-b border-border bg-muted flex-shrink-0">
                             <p className="text-xs font-semibold text-foreground">Respostas rápidas</p>
                           </div>

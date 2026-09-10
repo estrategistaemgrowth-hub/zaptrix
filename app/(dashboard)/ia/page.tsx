@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { Save, Zap, ToggleLeft, ToggleRight, LifeBuoy, TrendingUp, MessageCircle, Gift, Check, Clock } from 'lucide-react';
+import { MultiAgentTeaser } from '@/components/multi-agent-teaser';
+import { BuyInstanceModal } from '@/components/buy-instance-modal';
 
 interface BusinessHoursDay {
   enabled: boolean;
@@ -199,6 +201,7 @@ export default function IaPage() {
   >([]);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
   const [configuredConnectionIds, setConfiguredConnectionIds] = useState<Set<string>>(new Set());
+  const [showBuyInstance, setShowBuyInstance] = useState(false);
   const supabase = createClient();
 
   function applyTemplate(template: AgentTemplate) {
@@ -463,6 +466,10 @@ export default function IaPage() {
               })}
             </div>
           </div>
+        )}
+
+        {connections.length <= 1 && (
+          <MultiAgentTeaser onClick={() => setShowBuyInstance(true)} />
         )}
 
         {error && (
@@ -799,6 +806,7 @@ export default function IaPage() {
           </form>
         </div>
       </div>
+      <BuyInstanceModal open={showBuyInstance} onClose={() => setShowBuyInstance(false)} onGenerated={init} />
     </div>
   );
 }

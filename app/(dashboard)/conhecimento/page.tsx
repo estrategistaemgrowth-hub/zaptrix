@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { ensureWorkspace } from '@/lib/workspace';
 import { Upload, Trash2, FileText, BookOpen, ToggleLeft, ToggleRight, Link2, RefreshCw, Loader2 } from 'lucide-react';
+import { MultiAgentTeaser } from '@/components/multi-agent-teaser';
+import { BuyInstanceModal } from '@/components/buy-instance-modal';
 import { SkeletonCard } from '@/components/skeleton';
 import { ConfirmDialog, ConfirmState } from '@/components/confirm-dialog';
 
@@ -45,6 +47,7 @@ export default function ConhecimentoPage() {
    *  entradas próprias além das compartilhadas (whatsapp_connection_id NULL). */
   const [connections, setConnections] = useState<WhatsappConnectionLite[]>([]);
   const [activeConnectionId, setActiveConnectionId] = useState<string | null>(null);
+  const [showBuyInstance, setShowBuyInstance] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -315,6 +318,13 @@ export default function ConhecimentoPage() {
           </div>
         )}
 
+        {canManage && connections.length <= 1 && (
+          <MultiAgentTeaser
+            onClick={() => setShowBuyInstance(true)}
+            label="Quer um conhecimento específico para cada agente (vendas, suporte, atendimento geral)?"
+          />
+        )}
+
         {error && (
           <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
             {error}
@@ -574,6 +584,7 @@ export default function ConhecimentoPage() {
         </div>
       </div>
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />
+      <BuyInstanceModal open={showBuyInstance} onClose={() => setShowBuyInstance(false)} onGenerated={init} />
     </div>
   );
 }

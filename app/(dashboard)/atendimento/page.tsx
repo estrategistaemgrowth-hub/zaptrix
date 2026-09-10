@@ -35,6 +35,8 @@ import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
 import { QuickRepliesModal, type QuickReply } from '@/components/quick-replies-modal';
 import { ConversationInfoPanel } from '@/components/conversation-info-panel';
+import { MultiAgentTeaser } from '@/components/multi-agent-teaser';
+import { BuyInstanceModal } from '@/components/buy-instance-modal';
 
 const CONVERSATIONS_FETCH_LIMIT = 500;
 
@@ -207,6 +209,7 @@ export default function AtendimentoPage() {
     { id: string; phone_number: string | null; instance_name: string }[]
   >([]);
   const [connectionFilter, setConnectionFilter] = useState<string | null>(null);
+  const [showBuyInstance, setShowBuyInstance] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
   // Só rola pro final quando o usuário já estava perto do final — sem isso,
@@ -786,6 +789,13 @@ export default function AtendimentoPage() {
             </button>
           ))}
         </div>
+      )}
+
+      {connectionsList.length <= 1 && (
+        <MultiAgentTeaser
+          onClick={() => setShowBuyInstance(true)}
+          label="Quer separar o atendimento por número (ex: vendas e suporte em números diferentes)?"
+        />
       )}
 
       {error && (
@@ -1537,6 +1547,7 @@ export default function AtendimentoPage() {
           )}
         </div>
       </div>
+      <BuyInstanceModal open={showBuyInstance} onClose={() => setShowBuyInstance(false)} onGenerated={init} />
     </div>
   );
 }

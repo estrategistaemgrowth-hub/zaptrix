@@ -11,6 +11,7 @@ import { SkeletonRow } from '@/components/skeleton';
 import { StatusBadge } from '@/components/status-badge';
 import { QuotaBar } from '@/components/quota-bar';
 import { PlanPicker } from '@/components/plan-picker';
+import { BuyInstanceModal } from '@/components/buy-instance-modal';
 import { ConfirmDialog, ConfirmState } from '@/components/confirm-dialog';
 import {
   Plus,
@@ -219,14 +220,6 @@ export default function ConfiguracoesPage() {
   const [cancelingSubscription, setCancelingSubscription] = useState(false);
 
   const [showBuyInstance, setShowBuyInstance] = useState(false);
-  const [buyInstanceCpfCnpj, setBuyInstanceCpfCnpj] = useState('');
-  const [buyInstanceSubmitting, setBuyInstanceSubmitting] = useState(false);
-  const [buyInstanceError, setBuyInstanceError] = useState('');
-  const [buyInstanceResult, setBuyInstanceResult] = useState<{
-    pixQrCode: string | null;
-    paymentUrl: string | null;
-    warning?: string | null;
-  } | null>(null);
 
   const [aiProfileId, setAiProfileId] = useState<string | null>(null);
   const [handoffEnabled, setHandoffEnabled] = useState(false);
@@ -347,52 +340,6 @@ export default function ConfiguracoesPage() {
     setPlanPickerResult(result);
     setShowPlanPicker(false);
     if (workspaceId) loadBilling(workspaceId);
-  }
-
-  /** Abre o modal de compra de instância de qualquer lugar da tela (WhatsApp,
-   *  Minha Assinatura, modal de limite atingido) — pré-preenche o CPF/CNPJ já
-   *  cadastrado no workspace, se houver, pra não pedir de novo toda vez. */
-  function openBuyInstanceModal() {
-    setBuyInstanceCpfCnpj(workspaceBilling?.cpf_cnpj || '');
-    setBuyInstanceError('');
-    setShowBuyInstance(true);
-  }
-
-  async function handleBuyInstance() {
-    if (!buyInstanceCpfCnpj.trim()) {
-      setBuyInstanceError('Informe o CPF/CNPJ para gerar a cobrança PIX.');
-      return;
-    }
-
-    setBuyInstanceSubmitting(true);
-    setBuyInstanceError('');
-
-    try {
-      const res = await fetch('/api/subscription/buy-whatsapp-instance', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cpfCnpj: buyInstanceCpfCnpj.trim() }),
-      });
-
-      const result = await res.json();
-
-      if (!res.ok) {
-        setBuyInstanceError(result.error || 'Erro ao gerar cobrança');
-        return;
-      }
-
-      setBuyInstanceResult({
-        pixQrCode: result.invoice?.asaas_pix_qrcode || null,
-        paymentUrl: result.invoice?.asaas_invoice_url || null,
-        warning: result.asaasWarning,
-      });
-      setShowBuyInstance(false);
-      if (workspaceId) await loadBilling(workspaceId);
-    } catch (err) {
-      setBuyInstanceError('Erro inesperado ao gerar cobrança');
-    } finally {
-      setBuyInstanceSubmitting(false);
-    }
   }
 
   function handleCancelSubscription(action: 'cancel' | 'reactivate') {
@@ -1346,7 +1293,7 @@ export default function ConfiguracoesPage() {
                 </div>
                 <button
                   type="button"
-                  onClick={openBuyInstanceModal}
+                  onClick={() => setShowBuyInstance(true)}
                   className="px-4 py-1.5 text-sm font-medium text-primary border border-primary/30 rounded-lg hover:bg-primary/5 flex-shrink-0"
                 >
                   Comprar instância adicional
@@ -1492,7 +1439,7 @@ export default function ConfiguracoesPage() {
                   <span>·</span>
                   <button
                     type="button"
-                    onClick={openBuyInstanceModal}
+                    onClick={() => setShowBuyInstance(true)}
                     className="text-primary hover:underline font-medium"
                   >
                     Precisa de mais um número? Contratar instância adicional (R$ 39,90/mês)
@@ -2084,7 +2031,7 @@ export default function ConfiguracoesPage() {
                   type="button"
                   onClick={() => {
                     setShowConnectionLimitModal(false);
-                    openBuyInstanceModal();
+                    setShowBuyInstance(true);
                   }}
                   className="btn-gradient font-medium py-2.5"
                 >
@@ -2103,94 +2050,11 @@ export default function ConfiguracoesPage() {
           document.body
         )}
 
-      {(showBuyInstance || buyInstanceResult) &&
-        createPortal(
-          <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4 animate-backdrop-in">
-            <div className="bg-card rounded-2xl shadow-lg w-full max-w-sm p-6 animate-modal-in">
-              <h3 className="text-lg font-semibold text-foreground mb-1">Instância adicional de WhatsApp</h3>
-              <p className="text-sm text-muted-foreground mb-5">
-                R$ 39,90/mês, cobrado a cada 30 dias via PIX enquanto a instância estiver ativa.
-              </p>
-
-              {buyInstanceResult ? (
-                <div className="text-center space-y-3">
-                  <p className="text-sm text-muted-foreground">
-                    {buyInstanceResult.warning || 'Cobrança gerada! Escaneie o QR code para pagar com PIX.'}
-                  </p>
-                  {buyInstanceResult.pixQrCode && (
-                    <div className="flex justify-center">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
-                        src={`data:image/png;base64,${buyInstanceResult.pixQrCode}`}
-                        alt="QR Code PIX"
-                        className="w-40 h-40"
-                      />
-                    </div>
-                  )}
-                  {buyInstanceResult.paymentUrl && (
-                    <a
-                      href={buyInstanceResult.paymentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block w-full text-center btn-gradient font-medium py-2.5"
-                    >
-                      Pagar com PIX
-                    </a>
-                  )}
-                  <p className="text-xs text-muted-foreground">
-                    A instância extra é liberada automaticamente assim que o pagamento for confirmado — a
-                    próxima cobrança acontece em 30 dias, também por PIX.
-                  </p>
-                  <button
-                    type="button"
-                    onClick={() => setBuyInstanceResult(null)}
-                    className="text-sm text-muted-foreground hover:text-foreground"
-                  >
-                    Fechar
-                  </button>
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {buyInstanceError && (
-                    <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-                      {buyInstanceError}
-                    </div>
-                  )}
-                  <div>
-                    <label className="block text-sm font-medium text-foreground mb-2">CPF/CNPJ</label>
-                    <input
-                      type="text"
-                      value={buyInstanceCpfCnpj}
-                      onChange={(e) => setBuyInstanceCpfCnpj(e.target.value)}
-                      placeholder="Necessário para gerar a cobrança PIX"
-                      autoFocus
-                      className="w-full px-4 py-2 border border-border rounded-xl bg-white text-foreground"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      onClick={handleBuyInstance}
-                      disabled={buyInstanceSubmitting}
-                      className="flex-1 flex items-center justify-center gap-2 btn-gradient font-medium py-2.5 disabled:opacity-50"
-                    >
-                      {buyInstanceSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
-                      {buyInstanceSubmitting ? 'Gerando cobrança...' : 'Gerar cobrança PIX'}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setShowBuyInstance(false)}
-                      className="px-4 py-2.5 border border-border text-foreground rounded-xl font-medium hover:bg-background"
-                    >
-                      Cancelar
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>,
-          document.body
-        )}
+      <BuyInstanceModal
+        open={showBuyInstance}
+        onClose={() => setShowBuyInstance(false)}
+        onGenerated={() => workspaceId && loadBilling(workspaceId)}
+      />
     </div>
   );
 }

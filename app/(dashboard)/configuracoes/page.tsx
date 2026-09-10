@@ -82,6 +82,7 @@ interface LlmCredential {
   key_hint: string | null;
   model_id: string | null;
   is_primary: boolean;
+  is_fallback: boolean;
   enabled: boolean;
 }
 
@@ -535,7 +536,7 @@ export default function ConfiguracoesPage() {
   async function loadCredentials(wsId: string) {
     const { data } = await supabase
       .from('llm_credentials')
-      .select('id, provider, key_hint, model_id, is_primary, enabled')
+      .select('id, provider, key_hint, model_id, is_primary, is_fallback, enabled')
       .eq('workspace_id', wsId)
       .order('created_at', { ascending: false });
     setCredentials(data || []);
@@ -714,6 +715,22 @@ export default function ConfiguracoesPage() {
     if (!res.ok) {
       const result = await res.json();
       alert('Erro ao remover: ' + result.error);
+      return;
+    }
+
+    if (workspaceId) await loadCredentials(workspaceId);
+  }
+
+  async function handleSetCredentialRole(id: string, role: 'primary' | 'fallback') {
+    const res = await fetch('/api/workspace/llm-credentials', {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credentialId: id, role }),
+    });
+
+    if (!res.ok) {
+      const result = await res.json();
+      alert('Erro ao atualizar: ' + result.error);
       return;
     }
 
@@ -1727,6 +1744,15 @@ export default function ConfiguracoesPage() {
             </form>
           )}
 
+          {credentials.length > 1 && (
+            <p className="text-xs text-muted-foreground mb-3">
+              A IA usa a credencial <strong className="text-foreground font-medium">Principal</strong> pra
+              responder. Se ela falhar (limite de uso, erro, chave revogada), troca automaticamente pra{' '}
+              <strong className="text-foreground font-medium">Fallback</strong> — a conversa não fica sem
+              resposta.
+            </p>
+          )}
+
           <div className="space-y-2">
             {credentials.length === 0 ? (
               <div className="p-8 text-center">
@@ -1740,23 +1766,44 @@ export default function ConfiguracoesPage() {
               credentials.map((cred) => (
                 <div
                   key={cred.id}
-                  className="flex items-center justify-between p-4 border border-border rounded-xl bg-muted transition-all duration-200 hover:shadow-sm"
+                  className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-4 border border-border rounded-2xl bg-muted transition-all duration-200 hover:shadow-sm"
                 >
-                  <div>
-                    <p className="font-medium text-foreground flex items-center gap-2">
+                  <div className="min-w-0">
+                    <p className="font-medium text-foreground flex items-center gap-2 flex-wrap">
                       {PROVIDER_LABELS[cred.provider]}
                       {cred.is_primary && <StatusBadge label="Principal" />}
+                      {cred.is_fallback && <StatusBadge label="Fallback" active={false} tone="neutral" />}
                     </p>
-                    <p className="text-xs text-muted-foreground mt-1 font-mono">
+                    <p className="text-xs text-muted-foreground mt-1 font-mono truncate">
                       {cred.key_hint} · {cred.model_id}
                     </p>
                   </div>
-                  <button
-                    onClick={() => handleDeleteCredential(cred.id)}
-                    className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    {!cred.is_primary && (
+                      <button
+                        type="button"
+                        onClick={() => handleSetCredentialRole(cred.id, 'primary')}
+                        className="px-2.5 py-1.5 text-xs font-medium text-foreground border border-border rounded-lg hover:bg-white"
+                      >
+                        Definir principal
+                      </button>
+                    )}
+                    {!cred.is_fallback && !cred.is_primary && (
+                      <button
+                        type="button"
+                        onClick={() => handleSetCredentialRole(cred.id, 'fallback')}
+                        className="px-2.5 py-1.5 text-xs font-medium text-foreground border border-border rounded-lg hover:bg-white"
+                      >
+                        Definir fallback
+                      </button>
+                    )}
+                    <button
+                      onClick={() => handleDeleteCredential(cred.id)}
+                      className="p-2 text-destructive hover:bg-destructive/10 rounded-lg"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))
             )}

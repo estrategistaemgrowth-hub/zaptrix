@@ -866,13 +866,18 @@ async function tryAutoReply({
       return;
     }
 
-    const { data: credential } = await admin
+    // Traz principal e fallback juntas — se a principal falhar (limite de uso,
+    // erro, chave revogada), a conversa não fica sem resposta: troca pra
+    // fallback e segue o resto do turno com ela (ver retry logo abaixo).
+    const { data: aiCredentials } = await admin
       .from('llm_credentials')
-      .select('provider, encrypted_api_key, model_id')
+      .select('provider, encrypted_api_key, model_id, is_primary, is_fallback')
       .eq('workspace_id', workspaceId)
-      .eq('is_primary', true)
       .eq('enabled', true)
-      .maybeSingle();
+      .or('is_primary.eq.true,is_fallback.eq.true');
+
+    let credential = (aiCredentials || []).find((c) => c.is_primary) || null;
+    const fallbackCredential = (aiCredentials || []).find((c) => c.is_fallback) || null;
 
     if (!credential) return;
 
@@ -920,15 +925,36 @@ async function tryAutoReply({
       ? `\n\nMemória sobre este cliente (o que já sabemos dele de conversas anteriores):\n${contact.ai_memory}`
       : '';
     const systemPrompt = buildSystemPrompt(profile) + knowledgeContext + memoryContext;
-    const apiKey = decryptSecret(credential.encrypted_api_key);
+    let apiKey = decryptSecret(credential.encrypted_api_key);
 
-    const rawReply = await callLlm(
-      credential.provider as AiProvider,
-      apiKey,
-      credential.model_id || '',
-      systemPrompt,
-      history
-    );
+    let rawReply: string;
+    try {
+      rawReply = await callLlm(
+        credential.provider as AiProvider,
+        apiKey,
+        credential.model_id || '',
+        systemPrompt,
+        history
+      );
+    } catch (primaryErr) {
+      if (!fallbackCredential) throw primaryErr;
+      console.warn(
+        `Provedor de IA principal (${credential.provider}) falhou, usando fallback (${fallbackCredential.provider}):`,
+        primaryErr
+      );
+      // Troca a credencial ativa pro resto do turno — as chamadas seguintes
+      // (grounding, classificação de estágio, memória do cliente) usam a
+      // mesma variável e passam a rodar no fallback automaticamente.
+      credential = fallbackCredential;
+      apiKey = decryptSecret(credential.encrypted_api_key);
+      rawReply = await callLlm(
+        credential.provider as AiProvider,
+        apiKey,
+        credential.model_id || '',
+        systemPrompt,
+        history
+      );
+    }
 
     const { cleanedText, productNames } = extractPhotoRequests(rawReply);
 

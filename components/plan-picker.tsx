@@ -89,13 +89,13 @@ export function PlanPicker({ onSubscribed }: { onSubscribed: (result: SubscribeR
 
   return (
     <div className="space-y-4 text-left">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
         {plans.map((plan) => (
           <button
             key={plan.id}
             type="button"
             onClick={() => setSelectedPlanId(plan.id)}
-            className={`p-4 rounded-xl border text-left transition-all duration-200 ${
+            className={`p-4 rounded-2xl border text-left transition-all duration-200 ${
               selectedPlanId === plan.id
                 ? 'border-primary bg-primary/5 ring-1 ring-primary/20'
                 : 'border-border hover:border-primary/40'

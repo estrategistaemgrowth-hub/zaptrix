@@ -681,8 +681,8 @@ export default function IaPage() {
           <h3 className="text-lg font-semibold text-foreground mb-4">Próximas Etapas</h3>
           <ul className="space-y-2 text-sm text-muted-foreground">
             <li>→ Adicione documentação na seção Base de Conhecimento</li>
-            <li>→ Configure as credenciais LLM nas Configurações</li>
-            <li>→ Conecte sua conta WhatsApp via Evolution API</li>
+            <li>→ Configure o provedor de IA em Configurações</li>
+            <li>→ Conecte sua conta do WhatsApp em Configurações</li>
             <li>→ Em cada conversa no Atendimento, você pode ligar/desligar a IA individualmente</li>
           </ul>
         </div>

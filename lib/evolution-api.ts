@@ -122,7 +122,10 @@ export async function sendImageByUrl(
  *  quem chama deve engolir o erro se a versão da Evolution API não suportar. */
 export async function markMessageAsRead(instanceName: string, remoteJid: string, messageId: string) {
   return evolutionFetch(`/chat/markMessageAsRead/${instanceName}`, {
-    method: 'PUT',
+    // Confirmado ao vivo (2026-09-10): essa instância da Evolution API
+    // responde 404 "Cannot PUT" nesse endpoint — o método correto é POST,
+    // não PUT (a doc antiga/outra versão pode ter documentado diferente).
+    method: 'POST',
     body: JSON.stringify({
       readMessages: [{ remoteJid, id: messageId, fromMe: false }],
     }),

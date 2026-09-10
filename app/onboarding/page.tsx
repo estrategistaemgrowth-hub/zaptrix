@@ -81,7 +81,7 @@ export default function OnboardingPage() {
                 </div>
                 <div>
                   <h3 className="font-semibold text-foreground">Integrar WhatsApp</h3>
-                  <p className="text-sm text-muted-foreground">Conecte sua conta da Evolution API</p>
+                  <p className="text-sm text-muted-foreground">Conecte seu número do WhatsApp</p>
                 </div>
               </div>
             </div>

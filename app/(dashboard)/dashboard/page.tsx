@@ -85,7 +85,7 @@ const cards = [
 ];
 
 const steps: { n: number; key: keyof OnboardingStatus; title: string; desc: string; href: string }[] = [
-  { n: 1, key: 'whatsapp', title: 'WhatsApp', desc: 'Conectar Evolution API', href: '/configuracoes?section=whatsapp' },
+  { n: 1, key: 'whatsapp', title: 'WhatsApp', desc: 'Conectar seu número', href: '/configuracoes?section=whatsapp' },
   { n: 2, key: 'produtos', title: 'Produtos', desc: 'Cadastrar seu catálogo', href: '/produtos' },
   { n: 3, key: 'conhecimento', title: 'Conhecimento', desc: 'Treinar a IA com docs', href: '/conhecimento' },
   { n: 4, key: 'atender', title: 'Atender', desc: 'Receber mensagens ao vivo', href: '/atendimento' },

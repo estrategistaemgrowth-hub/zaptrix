@@ -1233,7 +1233,7 @@ export default function ConfiguracoesPage() {
             <div className="text-sm text-amber-900">
               <p className="font-medium mb-1">Risco de banimento do número</p>
               <p>
-                Conexão via Evolution API (não-oficial) pode banir o número em caso de envio em
+                Conexão via WhatsApp não-oficial pode banir o número em caso de envio em
                 massa. Evite números novos para grandes volumes (modo aquecimento).
               </p>
             </div>

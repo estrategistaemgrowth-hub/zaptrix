@@ -8,6 +8,13 @@ import { transcribeAudio } from '@/lib/transcription';
 import { checkRateLimit } from '@/lib/rate-limit';
 import { tokenize, scoreOverlap } from '@/lib/text-relevance';
 
+// Pede o maior tempo de execução disponível no plano — essa rota encadeia
+// várias chamadas de IA (resposta principal, verificação de fundamentação,
+// classificação de estágio, memória) numa única requisição, então precisa de
+// mais margem que o padrão de 10s. A Vercel aplica o teto real do plano
+// contratado automaticamente (não é erro se o valor pedido aqui for maior).
+export const maxDuration = 60;
+
 interface BusinessHoursDay {
   enabled: boolean;
   start: string;
@@ -71,9 +78,20 @@ function computeEffectiveDailyLimit(connection: {
   return Math.min(connection.daily_message_limit, warmupLimit);
 }
 
+// Teto de segurança pro delay entre pedaços de uma MESMA resposta (não entre
+// mensagens distintas do cliente) — descoberto em produção (2026-09-10): o
+// delay configurado (3-8s) pode, somado a vários pedaços + as outras chamadas
+// de IA da mesma requisição (memória, estágio do negócio), estourar o tempo
+// de execução da function serverless (plano Hobby da Vercel = 10s), matando
+// a function no meio do envio e deixando a IA muda pra respostas longas.
+// Anti-ban de verdade importa mais pro volume/ritmo ENTRE conversas do que
+// pra gap entre partes da mesma mensagem — por isso o teto aqui é bem menor
+// que o max configurado pelo lojista.
+const MAX_CHUNK_DELAY_MS = 1500;
+
 function randomDelayMs(minSeconds: number | null | undefined, maxSeconds: number | null | undefined): number {
-  const min = (minSeconds ?? 3) * 1000;
-  const max = (maxSeconds ?? 8) * 1000;
+  const min = Math.min((minSeconds ?? 3) * 1000, MAX_CHUNK_DELAY_MS);
+  const max = Math.min((maxSeconds ?? 8) * 1000, MAX_CHUNK_DELAY_MS);
   if (max <= min) return min;
   return min + Math.floor(Math.random() * (max - min));
 }

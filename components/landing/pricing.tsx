@@ -2,21 +2,10 @@
 
 import Link from 'next/link';
 import { useState } from 'react';
+import { BIG_PLANS, SMALL_PLANS } from '@/lib/landing-plans';
 
-// Espelha os planos da tabela `plans` (migração 0042 + planos já existentes).
-// ponytail: preços fixos aqui pra LP não depender do banco; mudou no master, mudar aqui também.
-const SMALL = [
-  { products: 20, cents: 2990 },
-  { products: 30, cents: 3690 },
-  { products: 40, cents: 4390 },
-  { products: 50, cents: 5090 },
-];
-
-const BIG = [
-  { name: 'Start', cents: 6990, products: 100, users: 3 },
-  { name: 'Profissional', cents: 9790, products: 500, users: 5, featured: true },
-  { name: 'Enterprise', cents: 15000, products: 1000, users: 10 },
-];
+const SMALL = SMALL_PLANS;
+const BIG = BIG_PLANS;
 
 const brl = (cents: number) => (cents / 100).toLocaleString('pt-BR', { minimumFractionDigits: 2 });
 

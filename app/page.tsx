@@ -6,11 +6,40 @@ import { Reveal } from '@/components/reveal';
 import { ChatDemo } from '@/components/landing/chat-demo';
 import { Pricing } from '@/components/landing/pricing';
 import { MobileCta } from '@/components/landing/mobile-cta';
+import { BIG_PLANS, EXTRA_WHATSAPP_CENTS, SITE_URL, SMALL_PLANS } from '@/lib/landing-plans';
+
+const TITLE = 'Zaptrix — IA que atende e vende pelo WhatsApp para lojistas';
+const DESCRIPTION =
+  'Cadastre seus produtos com foto, preço e link de pagamento e deixe a IA do Zaptrix atender no seu WhatsApp: manda foto, confere estoque, entende áudio e envia o link na hora da compra. Planos a partir de R$ 29,90/mês e 7 dias grátis.';
 
 export const metadata: Metadata = {
-  title: 'Zaptrix — seu catálogo vendendo no WhatsApp com IA',
-  description:
-    'Cadastre seus produtos com o link de pagamento e deixe a IA do Zaptrix atender, mandar foto, tirar dúvida e fechar a venda no WhatsApp. Teste grátis por 7 dias.',
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
+  applicationName: 'Zaptrix',
+  keywords: [
+    'atendimento WhatsApp com IA',
+    'vender pelo WhatsApp',
+    'chatbot WhatsApp para loja',
+    'IA para lojista',
+    'automação de vendas WhatsApp',
+    'link de pagamento WhatsApp',
+    'catálogo no WhatsApp',
+    'atendente virtual WhatsApp',
+    'WhatsApp para Tray',
+    'WhatsApp para Nuvemshop',
+  ],
+  alternates: { canonical: '/' },
+  openGraph: {
+    type: 'website',
+    locale: 'pt_BR',
+    url: '/',
+    siteName: 'Zaptrix',
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
+  robots: { index: true, follow: true, googleBot: { index: true, follow: true, 'max-image-preview': 'large', 'max-snippet': -1 } },
 };
 
 const IMG = (id: string, w = 480) => `https://images.unsplash.com/${id}?w=${w}&q=70&auto=format&fit=crop`;
@@ -273,9 +302,71 @@ const FAQ = [
   ['Como funciona o teste grátis?', 'São 7 dias sem cartão de crédito. Você cria a conta, cadastra os produtos e conecta o WhatsApp. Depois escolhe o plano, sem fidelidade.'],
 ];
 
+const money = (cents: number) => (cents / 100).toFixed(2);
+
+const JSON_LD = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'Organization',
+      '@id': `${SITE_URL}/#org`,
+      name: 'Zaptrix',
+      url: SITE_URL,
+      logo: `${SITE_URL}/zaptrix-icon.png`,
+      parentOrganization: { '@type': 'Organization', name: 'Agência MAVI' },
+    },
+    {
+      '@type': 'SoftwareApplication',
+      '@id': `${SITE_URL}/#app`,
+      name: 'Zaptrix',
+      url: SITE_URL,
+      applicationCategory: 'BusinessApplication',
+      applicationSubCategory: 'Atendimento e vendas pelo WhatsApp com IA',
+      operatingSystem: 'Web',
+      inLanguage: 'pt-BR',
+      description: DESCRIPTION,
+      publisher: { '@id': `${SITE_URL}/#org` },
+      featureList: [
+        'IA que responde clientes no WhatsApp do lojista',
+        'Catálogo com foto, preço, variações, estoque e link de pagamento',
+        'Envio de foto e link de pagamento na conversa',
+        'Transcrição de áudio do cliente',
+        'Base de conhecimento a partir de links',
+        'Transferência para atendente humano com rodízio',
+        'Quadro de vendas com venda ganha ou perdida',
+        'Importação de produtos por CSV, incluindo export da Tray',
+      ],
+      offers: {
+        '@type': 'AggregateOffer',
+        priceCurrency: 'BRL',
+        lowPrice: money(SMALL_PLANS[0].cents),
+        highPrice: money(BIG_PLANS[BIG_PLANS.length - 1].cents),
+        offerCount: SMALL_PLANS.length + BIG_PLANS.length,
+        offers: [
+          ...SMALL_PLANS.map((p) => ({ name: `Essencial ${p.products}`, products: p.products, cents: p.cents })),
+          ...BIG_PLANS.map((p) => ({ name: p.name, products: p.products, cents: p.cents })),
+        ].map((p) => ({
+          '@type': 'Offer',
+          name: p.name,
+          description: `Até ${p.products} produtos. Número de WhatsApp adicional: R$ ${money(EXTRA_WHATSAPP_CENTS).replace('.', ',')}/mês.`,
+          price: money(p.cents),
+          priceCurrency: 'BRL',
+          url: `${SITE_URL}/assinar`,
+          priceSpecification: { '@type': 'UnitPriceSpecification', price: money(p.cents), priceCurrency: 'BRL', billingDuration: 'P1M' },
+        })),
+      },
+    },
+    {
+      '@type': 'FAQPage',
+      mainEntity: FAQ.map(([q, a]) => ({ '@type': 'Question', name: q, acceptedAnswer: { '@type': 'Answer', text: a } })),
+    },
+  ],
+};
+
 export default function Home() {
   return (
     <div className="min-h-screen overflow-x-hidden bg-background text-foreground">
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD).replace(/</g, '\\u003c') }} />
       {/* Navegação */}
       <header className="sticky top-3 z-40 px-3">
         <div className="mx-auto flex max-w-6xl items-center justify-between rounded-full border border-border bg-card/85 py-2 pl-5 pr-2 shadow-[0_10px_30px_-20px_rgba(29,78,216,0.5)] backdrop-blur">

@@ -1,7 +1,7 @@
 import { createServerClient, parseCookieHeader } from '@supabase/ssr';
 import { NextRequest, NextResponse } from 'next/server';
 
-const PUBLIC_PATHS = ['/login', '/signup', '/assinar'];
+const PUBLIC_PATHS = ['/login', '/signup', '/assinar', '/opengraph-image'];
 const NO_WORKSPACE_CHECK_PATHS = ['/onboarding', '/workspace-suspended', '/assinatura-vencida'];
 
 export async function middleware(request: NextRequest) {

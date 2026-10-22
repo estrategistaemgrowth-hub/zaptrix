@@ -1,0 +1,45 @@
+# Zaptrix
+
+> Zaptrix é um sistema brasileiro (SaaS) de atendimento e vendas pelo WhatsApp com inteligência artificial para lojistas. O lojista cadastra os produtos com foto, preço e link de pagamento, conecta o próprio número de WhatsApp lendo um QR Code, e a IA responde os clientes, envia foto, confere estoque e manda o link de pagamento na hora da compra. Funciona para lojas virtuais (Tray, Nuvemshop, Shopify) e para quem vende só pelo WhatsApp ou Instagram usando links do Mercado Pago, PagSeguro, InfinitePay, Pix ou do banco.
+
+Site: https://zaptrix.agenciamavi.com.br
+Idioma: português do Brasil
+Empresa: Agência MAVI
+
+## Para quem é
+
+- Lojistas de pequeno e médio porte que vendem pelo WhatsApp
+- Lojas virtuais que querem atender no WhatsApp com IA
+- Quem vende sem loja virtual, só com link de pagamento por produto
+
+## O que o Zaptrix faz
+
+- Atendimento por IA no número de WhatsApp do próprio lojista, a qualquer hora
+- Catálogo de produtos com foto, preço, preço promocional, categoria, variações (tamanho e cor), estoque e link de compra
+- Envio da foto do produto e do link de pagamento dentro da conversa
+- Transcrição de áudios enviados pelo cliente antes da resposta
+- Base de conhecimento (política de troca, frete, FAQ), inclusive importada a partir de um link
+- Construtor de agente com quatro papéis: Vendas, Suporte, Atendimento Geral e Pós-venda
+- Transferência para atendente humano por gatilhos definidos pelo lojista, com rodízio entre atendentes
+- Quadro (kanban) de atendimento com estágios e marcação de venda ganha ou perdida
+- Importação de produtos por planilha CSV, incluindo o export padrão da Tray
+- Painel web, sem instalação no celular
+
+## Preços (mensal, em reais)
+
+- Teste grátis: 7 dias, sem cartão de crédito
+- Essencial 20: R$ 29,90 — até 20 produtos, 1 usuário, 1 WhatsApp
+- Essencial 30: R$ 36,90 — até 30 produtos, 1 usuário, 1 WhatsApp
+- Essencial 40: R$ 43,90 — até 40 produtos, 1 usuário, 1 WhatsApp
+- Essencial 50: R$ 50,90 — até 50 produtos, 1 usuário, 1 WhatsApp
+- Start: R$ 69,90 — até 100 produtos, 3 usuários, 1 WhatsApp
+- Profissional: R$ 97,90 — até 500 produtos, 5 usuários, 1 WhatsApp
+- Enterprise: R$ 150,00 — até 1000 produtos, 10 usuários, 1 WhatsApp
+- Número de WhatsApp adicional: R$ 39,90 por mês
+- Sem fidelidade; cancela quando quiser
+
+## Links
+
+- [Página inicial](https://zaptrix.agenciamavi.com.br/)
+- [Teste grátis](https://zaptrix.agenciamavi.com.br/assinar?trial=1)
+- [Assinar](https://zaptrix.agenciamavi.com.br/assinar)

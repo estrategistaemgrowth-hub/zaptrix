@@ -430,10 +430,10 @@ export default function Home() {
       </Reveal>
 
       {/* Plataformas */}
-      <Reveal className="mx-auto max-w-6xl px-4 pt-20 text-center">
+      <Reveal className="mx-auto max-w-6xl px-4 pt-16 text-center md:pt-20">
         <p className="text-sm text-muted-foreground">Funciona com o link de pagamento de onde você já vende</p>
         <div className="mt-6 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)] md:overflow-visible md:[mask-image:none]">
-          <div className="lp-marquee flex w-max items-center gap-3 md:w-auto md:flex-wrap md:justify-center md:gap-2">
+          <div className="lp-marquee flex w-max items-center gap-3 md:flex-wrap md:justify-center md:gap-2">
             <Logos />
             <span className="contents md:hidden">
               <Logos hidden />
@@ -444,17 +444,17 @@ export default function Home() {
       </Reveal>
 
       {/* Como funciona */}
-      <section id="como-funciona" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-28">
+      <section id="como-funciona" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-20 md:pt-28">
         <Reveal>
           <SectionTitle kicker="Como funciona" title="Três passos e o seu WhatsApp começa a vender" sub="Sem programador e sem instalar nada no celular." />
         </Reveal>
-        <Reveal className="mt-10 lp-scroll -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:overflow-visible md:px-0 md:pb-0 md:grid-cols-3 md:gap-5">
+        <Reveal className="mt-10 grid gap-4 md:grid-cols-3 md:gap-5">
           {[
             { n: '1', t: 'Cadastre o produto e cole o link', d: 'Foto, preço, promoção, variações, estoque e o link onde o cliente paga.', bg: 'bg-[#2563eb]/[0.07]', mock: <ProductFormMock /> },
             { n: '2', t: 'Conecte o seu número', d: 'Leia o QR Code no painel. Os clientes continuam falando com o contato de sempre.', bg: 'bg-[#22d3ee]/[0.12]', mock: <QrMock /> },
             { n: '3', t: 'A IA atende e manda o link', d: 'Entende texto e áudio, responde com foto e preço e envia o link quando o cliente decide.', bg: 'bg-[#7dd3fc]/[0.22]', mock: <AudioMock /> },
           ].map((s) => (
-            <div key={s.n} className={`lp-lift flex w-[84%] flex-none snap-center flex-col gap-6 rounded-[32px] p-6 md:w-auto ${s.bg}`}>
+            <div key={s.n} className={`lp-lift flex flex-col gap-6 rounded-[32px] p-6 ${s.bg}`}>
               <div className="grid flex-1 content-center">{s.mock}</div>
               <div>
                 <span className="grid h-8 w-8 place-items-center rounded-full bg-card text-sm font-bold text-primary shadow-sm">{s.n}</span>
@@ -467,7 +467,7 @@ export default function Home() {
       </section>
 
       {/* Lado humano */}
-      <section className="mx-auto max-w-6xl px-4 pt-28">
+      <section className="mx-auto max-w-6xl px-4 pt-20 md:pt-28">
         <Reveal className="grid items-center gap-14 lg:grid-cols-2">
           <div className="relative">
             <img src={SELLER} alt="Lojista atendendo uma cliente que paga pelo celular" className="aspect-[4/3.4] w-full rounded-[32px] object-cover" />
@@ -517,32 +517,32 @@ export default function Home() {
       </section>
 
       {/* Recursos (bento) */}
-      <section id="recursos" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-28">
+      <section id="recursos" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-20 md:pt-28">
         <Reveal>
           <SectionTitle kicker="Recursos" title="Tudo que a sua loja precisa pra vender pelo WhatsApp" />
         </Reveal>
-        <Reveal className="mt-10 lp-scroll -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:overflow-visible md:px-0 md:pb-0 md:grid-cols-6 md:gap-5">
-          <div className="lp-lift rounded-[32px] border border-border bg-card w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-4">
+        <Reveal className="mt-10 grid gap-4 md:grid-cols-6 md:gap-5">
+          <div className="lp-lift rounded-[32px] border border-border bg-card p-6 md:col-span-4">
             <h3 className="text-lg font-semibold">Quadro de vendas</h3>
             <p className="mt-1 text-sm text-muted-foreground">Cada conversa vira um card. A IA marca quando a venda fecha ou se perde.</p>
             <div className="mt-5"><KanbanMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] bg-[#22d3ee]/[0.12] w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-2">
+          <div className="lp-lift rounded-[32px] bg-[#22d3ee]/[0.12] p-6 md:col-span-2">
             <h3 className="text-lg font-semibold">Entende áudio</h3>
             <p className="mt-1 text-sm text-muted-foreground">O cliente manda áudio e a IA transcreve antes de responder.</p>
             <div className="mt-6"><AudioMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] bg-[#2563eb]/[0.07] w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-3">
+          <div className="lp-lift rounded-[32px] bg-[#2563eb]/[0.07] p-6 md:col-span-3">
             <h3 className="text-lg font-semibold">Construtor de agente</h3>
             <p className="mt-1 text-sm text-muted-foreground">Quatro papéis prontos pra IA assumir.</p>
             <div className="mt-5"><RolesMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] border border-border bg-card w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-3">
+          <div className="lp-lift rounded-[32px] border border-border bg-card p-6 md:col-span-3">
             <h3 className="text-lg font-semibold">Passa pra uma pessoa quando precisa</h3>
             <p className="mt-1 text-sm text-muted-foreground">Gatilhos que você define e rodízio entre atendentes.</p>
             <div className="mt-5"><HandoffMock /></div>
           </div>
-          <div className="banner-card-surface lp-lift grid gap-5 rounded-[32px] p-6 w-[86%] flex-none snap-center text-white sm:p-8 md:w-auto md:col-span-6 md:grid-cols-3">
+          <div className="banner-card-surface lp-lift grid gap-5 rounded-[32px] p-6 text-white sm:p-8 md:col-span-6 md:grid-cols-3">
             {[
               ['Base de conhecimento', 'Cole o link da sua política de troca ou FAQ e a IA passa a usar.'],
               ['Importação por planilha', 'Suba o CSV do catálogo, inclusive o export padrão da Tray.'],
@@ -558,7 +558,7 @@ export default function Home() {
       </section>
 
       {/* Preços */}
-      <section id="precos" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-28">
+      <section id="precos" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-20 md:pt-28">
         <Reveal>
           <SectionTitle kicker="Preços" title="Um plano pro tamanho da sua loja" sub="Comece com 7 dias grátis. Depois, escolha o plano que cabe no seu catálogo." />
         </Reveal>
@@ -568,7 +568,7 @@ export default function Home() {
       </section>
 
       {/* Dúvidas */}
-      <section id="duvidas" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-28">
+      <section id="duvidas" className="mx-auto max-w-6xl scroll-mt-24 px-4 pt-20 md:pt-28">
         <Reveal className="grid gap-10 lg:grid-cols-[1fr_1.4fr]">
           <div>
             <h2 className="text-balance text-3xl font-bold tracking-tight sm:text-[42px] sm:leading-[1.1]">Perguntas frequentes</h2>
@@ -589,7 +589,7 @@ export default function Home() {
       </section>
 
       {/* CTA final */}
-      <Reveal className="px-3 pt-28">
+      <Reveal className="px-3 pt-20 md:pt-28">
         <div className="banner-card-surface relative mx-auto grid max-w-6xl items-center gap-4 overflow-hidden rounded-[40px] px-6 pt-12 text-white sm:px-12 lg:grid-cols-[1.2fr_1fr]">
           <div className="pb-6 lg:pb-12">
             <h2 className="text-balance text-3xl font-bold leading-[1.1] sm:text-5xl">O próximo cliente vai mandar mensagem fora do horário.</h2>

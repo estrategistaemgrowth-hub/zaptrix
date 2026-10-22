@@ -509,10 +509,12 @@ body {
 
 /* Card que anda de "Em atendimento" até "Ganho" no quadro */
 @keyframes lpKanban {
-  0%, 15% { transform: translateX(0); }
-  35%, 50% { transform: translateX(calc(100% + 10px)); }
-  70%, 92% { transform: translateX(calc(200% + 20px)); }
-  100% { transform: translateX(0); opacity: 0; }
+  0%, 15% { transform: translateX(0); opacity: 1; }
+  35%, 50% { transform: translateX(calc(100% + 10px)); opacity: 1; }
+  70%, 92% { transform: translateX(calc(200% + 20px)); opacity: 1; }
+  96% { transform: translateX(calc(200% + 20px)); opacity: 0; }
+  97% { transform: translateX(0); opacity: 0; }
+  100% { transform: translateX(0); opacity: 1; }
 }
 .lp-kanban { animation: lpKanban 7s cubic-bezier(0.22, 0.61, 0.36, 1) infinite; }
 

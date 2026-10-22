@@ -14,7 +14,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  if (PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
+  // "/" é a landing page pública — comparação exata, senão liberaria tudo.
+  if (pathname === '/' || PUBLIC_PATHS.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 

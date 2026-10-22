@@ -6,6 +6,7 @@ import { Reveal } from '@/components/reveal';
 import { ChatDemo } from '@/components/landing/chat-demo';
 import { Pricing } from '@/components/landing/pricing';
 import { MobileCta } from '@/components/landing/mobile-cta';
+import { Carousel } from '@/components/landing/carousel';
 import { BIG_PLANS, EXTRA_WHATSAPP_CENTS, SITE_URL, SMALL_PLANS } from '@/lib/landing-plans';
 
 const TITLE = 'Zaptrix — IA que atende e vende pelo WhatsApp para lojistas';
@@ -448,7 +449,8 @@ export default function Home() {
         <Reveal>
           <SectionTitle kicker="Como funciona" title="Três passos e o seu WhatsApp começa a vender" sub="Sem programador e sem instalar nada no celular." />
         </Reveal>
-        <Reveal className="mt-10 grid gap-4 md:grid-cols-3 md:gap-5">
+        <Reveal className="mt-10">
+          <Carousel grid="md:grid-cols-3 md:gap-5">
           {[
             { n: '1', t: 'Cadastre o produto e cole o link', d: 'Foto, preço, promoção, variações, estoque e o link onde o cliente paga.', bg: 'bg-[#2563eb]/[0.07]', mock: <ProductFormMock /> },
             { n: '2', t: 'Conecte o seu número', d: 'Leia o QR Code no painel. Os clientes continuam falando com o contato de sempre.', bg: 'bg-[#22d3ee]/[0.12]', mock: <QrMock /> },
@@ -463,6 +465,7 @@ export default function Home() {
               </div>
             </div>
           ))}
+          </Carousel>
         </Reveal>
       </section>
 
@@ -521,28 +524,29 @@ export default function Home() {
         <Reveal>
           <SectionTitle kicker="Recursos" title="Tudo que a sua loja precisa pra vender pelo WhatsApp" />
         </Reveal>
-        <Reveal className="mt-10 grid gap-4 md:grid-cols-6 md:gap-5">
-          <div className="lp-lift rounded-[32px] border border-border bg-card p-6 md:col-span-4">
+        <Reveal className="mt-10">
+          <Carousel grid="md:grid-cols-6 md:gap-5" spans={['md:col-span-4', 'md:col-span-2', 'md:col-span-3', 'md:col-span-3', 'md:col-span-6']}>
+          <div className="lp-lift rounded-[32px] border border-border bg-card p-6">
             <h3 className="text-lg font-semibold">Quadro de vendas</h3>
             <p className="mt-1 text-sm text-muted-foreground">Cada conversa vira um card. A IA marca quando a venda fecha ou se perde.</p>
             <div className="mt-5"><KanbanMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] bg-[#22d3ee]/[0.12] p-6 md:col-span-2">
+          <div className="lp-lift rounded-[32px] bg-[#22d3ee]/[0.12] p-6">
             <h3 className="text-lg font-semibold">Entende áudio</h3>
             <p className="mt-1 text-sm text-muted-foreground">O cliente manda áudio e a IA transcreve antes de responder.</p>
             <div className="mt-6"><AudioMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] bg-[#2563eb]/[0.07] p-6 md:col-span-3">
+          <div className="lp-lift rounded-[32px] bg-[#2563eb]/[0.07] p-6">
             <h3 className="text-lg font-semibold">Construtor de agente</h3>
             <p className="mt-1 text-sm text-muted-foreground">Quatro papéis prontos pra IA assumir.</p>
             <div className="mt-5"><RolesMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] border border-border bg-card p-6 md:col-span-3">
+          <div className="lp-lift rounded-[32px] border border-border bg-card p-6">
             <h3 className="text-lg font-semibold">Passa pra uma pessoa quando precisa</h3>
             <p className="mt-1 text-sm text-muted-foreground">Gatilhos que você define e rodízio entre atendentes.</p>
             <div className="mt-5"><HandoffMock /></div>
           </div>
-          <div className="banner-card-surface lp-lift grid gap-5 rounded-[32px] p-6 text-white sm:p-8 md:col-span-6 md:grid-cols-3">
+          <div className="banner-card-surface lp-lift grid gap-5 rounded-[32px] p-6 content-start text-white sm:p-8 md:grid-cols-3">
             {[
               ['Base de conhecimento', 'Cole o link da sua política de troca ou FAQ e a IA passa a usar.'],
               ['Importação por planilha', 'Suba o CSV do catálogo, inclusive o export padrão da Tray.'],
@@ -554,6 +558,7 @@ export default function Home() {
               </div>
             ))}
           </div>
+          </Carousel>
         </Reveal>
       </section>
 

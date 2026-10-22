@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { BIG_PLANS, SMALL_PLANS } from '@/lib/landing-plans';
+import { Carousel } from './carousel';
 
 const SMALL = SMALL_PLANS;
 const BIG = BIG_PLANS;
@@ -83,7 +84,7 @@ export function Pricing() {
       </div>
 
       {/* Planos fixos */}
-      <div className="grid gap-4 md:grid-cols-3 md:gap-5">
+      <Carousel grid="md:grid-cols-3 md:gap-5 md:pt-3">
         {BIG.map((p) => (
           <div
             key={p.name}
@@ -118,7 +119,7 @@ export function Pricing() {
             </Link>
           </div>
         ))}
-      </div>
+      </Carousel>
       <p className="text-center text-sm text-muted-foreground">
         Número extra de WhatsApp: R$ 39,90/mês cada. Sem fidelidade, cancele quando quiser.
       </p>

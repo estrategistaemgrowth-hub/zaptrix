@@ -20,6 +20,10 @@ function formatCents(cents: number): string {
 
 const EXTRA_INSTANCE_PRICE_CENTS = 3990;
 
+// Planos com até este limite de produtos viram uma barra deslizante (escolhe a
+// quantidade, o preço acompanha); os maiores continuam em cards.
+const SMALL_PLAN_MAX_PRODUCTS = 50;
+
 const STEPS = ['Escolha o plano', 'Seus dados', 'Pagamento'];
 
 function StepIndicator({ current, total }: { current: number; total: number }) {
@@ -75,12 +79,29 @@ function SignupForm() {
       .select('id, name, price_cents, product_limit, member_limit')
       .order('price_cents', { ascending: true })
       .then(({ data }) => {
-        setPlans(data || []);
-        if (data && data.length > 0) setSelectedPlanId(data[0].id);
+        const all = data || [];
+        setPlans(all);
+        // ?produtos=40 vindo da landing pré-seleciona o plano pequeno equivalente.
+        const wanted = Number(searchParams.get('produtos'));
+        const fromQuery = all.find((p) => p.product_limit <= SMALL_PLAN_MAX_PRODUCTS && p.product_limit === wanted);
+        const firstBig = all.find((p) => p.product_limit > SMALL_PLAN_MAX_PRODUCTS);
+        const initial = fromQuery || firstBig || all[0];
+        if (initial) setSelectedPlanId(initial.id);
       });
   }, []);
 
   const selectedPlan = plans.find((p) => p.id === selectedPlanId);
+  const smallPlans = plans.filter((p) => p.product_limit <= SMALL_PLAN_MAX_PRODUCTS);
+  const bigPlans = plans.filter((p) => p.product_limit > SMALL_PLAN_MAX_PRODUCTS);
+  const smallSelected = smallPlans.some((p) => p.id === selectedPlanId);
+  const [smallIndex, setSmallIndex] = useState(0);
+  const sliderPlan = smallPlans[Math.min(smallIndex, smallPlans.length - 1)];
+
+  useEffect(() => {
+    const i = smallPlans.findIndex((p) => p.id === selectedPlanId);
+    if (i >= 0) setSmallIndex(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [plans]);
   const totalMonthlyCents = (selectedPlan?.price_cents || 0) + extraInstances * EXTRA_INSTANCE_PRICE_CENTS;
 
   async function handleSubmit(e: React.FormEvent) {
@@ -167,8 +188,57 @@ function SignupForm() {
         {/* Etapa 1 (só assinatura paga) — escolha do plano */}
         {step === 0 && (
           <div className="space-y-4">
+            {sliderPlan && (
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedPlanId(sliderPlan.id)}
+                onKeyDown={(e) => e.key === 'Enter' && setSelectedPlanId(sliderPlan.id)}
+                className={`p-4 rounded-2xl border bg-card text-left cursor-pointer transition-all duration-200 ${
+                  smallSelected ? 'border-primary bg-primary/5 ring-1 ring-primary/20' : 'border-border hover:border-primary/40'
+                }`}
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-foreground text-sm">Essencial · até {SMALL_PLAN_MAX_PRODUCTS} produtos</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">Escolha quantos produtos você tem e pague só por eles.</p>
+                  </div>
+                  <p className="text-lg font-bold text-primary leading-tight whitespace-nowrap">
+                    {formatCents(sliderPlan.price_cents)}
+                    <span className="text-xs font-normal text-muted-foreground">/mês</span>
+                  </p>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={smallPlans.length - 1}
+                  step={1}
+                  value={Math.min(smallIndex, smallPlans.length - 1)}
+                  onChange={(e) => {
+                    const i = Number(e.target.value);
+                    setSmallIndex(i);
+                    setSelectedPlanId(smallPlans[i].id);
+                  }}
+                  aria-label="Quantidade de produtos"
+                  className="mt-4 w-full accent-[#2563eb]"
+                />
+                <div className="mt-1 flex justify-between text-[11px] text-muted-foreground">
+                  {smallPlans.map((p) => (
+                    <span key={p.id} className={p.id === sliderPlan.id ? 'font-semibold text-foreground' : ''}>
+                      {p.product_limit}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><Package className="w-3 h-3" /> até {sliderPlan.product_limit} produtos</span>
+                  <span className="flex items-center gap-1.5"><Users className="w-3 h-3" /> {sliderPlan.member_limit} usuário{sliderPlan.member_limit > 1 ? 's' : ''}</span>
+                  <span className="flex items-center gap-1.5"><Smartphone className="w-3 h-3" /> 1 WhatsApp incluso</span>
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2.5">
-              {plans.map((plan) => {
+              {bigPlans.map((plan) => {
                 const isRecommended = plan.name === 'Profissional';
                 return (
                   <div

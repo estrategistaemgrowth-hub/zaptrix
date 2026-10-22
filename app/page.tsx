@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Reveal } from '@/components/reveal';
 import { ChatDemo } from '@/components/landing/chat-demo';
 import { Pricing } from '@/components/landing/pricing';
+import { MobileCta } from '@/components/landing/mobile-cta';
 
 export const metadata: Metadata = {
   title: 'Zaptrix — seu catálogo vendendo no WhatsApp com IA',
@@ -49,7 +50,7 @@ function SectionTitle({ kicker, title, sub }: { kicker: string; title: string; s
 
 function Float({ children, className = '', delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
   return (
-    <div className={`lp-bob absolute z-20 hidden sm:block rounded-2xl border border-border bg-card/95 px-3.5 py-2.5 shadow-[0_18px_40px_-18px_rgba(29,78,216,0.45)] backdrop-blur ${className}`} style={{ animationDelay: `${delay}ms` }}>
+    <div className={`lp-bob absolute z-20 rounded-2xl border border-border bg-card/95 px-3.5 py-2.5 shadow-[0_18px_40px_-18px_rgba(29,78,216,0.45)] backdrop-blur ${className}`} style={{ animationDelay: `${delay}ms` }}>
       {children}
     </div>
   );
@@ -230,7 +231,38 @@ function HandoffMock() {
 
 /* ---------- Conteúdo ---------- */
 
-const PLATFORMS = ['Tray', 'Nuvemshop', 'Shopify', 'Mercado Pago', 'PagSeguro', 'InfinitePay', 'Link do banco'];
+// Logos em /public/logos; as que são só símbolo (simple-icons) levam o nome ao lado.
+const PLATFORMS: { file: string; name: string; h: number; label?: boolean }[] = [
+  { file: 'tray', name: 'Tray', h: 28 },
+  { file: 'nuvemshop', name: 'Nuvemshop', h: 28 },
+  { file: 'shopify', name: 'Shopify', h: 22, label: true },
+  { file: 'mercadopago', name: 'Mercado Pago', h: 22, label: true },
+  { file: 'pagseguro', name: 'PagSeguro', h: 22, label: true },
+  { file: 'infinitepay', name: 'InfinitePay', h: 22 },
+  { file: 'pix', name: 'Pix', h: 20, label: true },
+];
+
+function Logos({ hidden }: { hidden?: boolean }) {
+  return (
+    <>
+      {PLATFORMS.map((p) => (
+        <span
+          key={p.file}
+          aria-hidden={hidden}
+          className="group flex h-14 w-[150px] flex-none items-center justify-center gap-2 rounded-[16px] border border-border bg-card px-2.5 transition duration-200 hover:border-primary/40"
+        >
+          <img
+            src={`/logos/${p.file}.svg`}
+            alt={hidden || p.label ? "" : p.name}
+            style={{ height: p.h }}
+            className="w-auto max-w-[110px] opacity-60 transition duration-200 [filter:grayscale(1)_contrast(1.2)] group-hover:opacity-100 group-hover:[filter:none]"
+          />
+          {p.label && <span className="text-[14px] font-bold text-foreground/45 transition group-hover:text-foreground">{p.name}</span>}
+        </span>
+      ))}
+    </>
+  );
+}
 
 const FAQ = [
   ['Preciso ter loja virtual?', 'Não. Basta ter um link de pagamento pra cada produto: pode ser do Mercado Pago, PagSeguro, do seu banco ou o checkout da loja que você já usa.'],
@@ -269,20 +301,20 @@ export default function Home() {
               <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-[#0c7a3a]" />
               Teste grátis por 7 dias, sem cartão
             </Pill>
-            <h1 className="text-balance text-[40px] font-bold leading-[1.05] tracking-tight sm:text-[64px]">
+            <h1 className="text-balance text-[36px] font-bold leading-[1.05] tracking-tight sm:text-[64px]">
               Seu catálogo vendendo no WhatsApp, <span className="text-primary">até de madrugada.</span>
             </h1>
             <p className="max-w-[58ch] text-pretty text-muted-foreground sm:text-lg">
               Cadastre o produto com foto, preço e o link de pagamento. A IA do Zaptrix responde no seu número, mostra a foto,
               confere o estoque e manda o link na hora em que o cliente decide comprar.
             </p>
-            <div className="flex flex-wrap justify-center gap-3">
-              <Link href="/assinar?trial=1" className="btn-gradient px-7 py-3.5 font-semibold">Começar teste grátis</Link>
-              <a href="#precos" className="rounded-full border border-border bg-card px-6 py-3.5 font-semibold hover:border-primary/50">Ver preços</a>
+            <div id="hero-cta" className="flex w-full flex-col gap-3 sm:w-auto sm:flex-row sm:justify-center">
+              <Link href="/assinar?trial=1" className="btn-gradient px-7 py-3.5 text-center font-semibold">Começar teste grátis</Link>
+              <a href="#precos" className="rounded-full border border-border bg-card px-6 py-3.5 text-center font-semibold hover:border-primary/50">Ver preços</a>
             </div>
           </div>
 
-          <div className="relative mx-auto mt-14 h-[560px] max-w-5xl">
+          <div className="relative mx-auto mt-14 max-w-5xl pb-16">
             <div className="absolute left-0 top-20 hidden w-[340px] -rotate-3 lg:block">
               <KanbanMock />
             </div>
@@ -292,11 +324,11 @@ export default function Home() {
             <div className="relative z-10 mx-auto w-fit">
               <ChatDemo height={470} />
             </div>
-            <Float className="sm:left-0 sm:top-0 lg:left-[6%] lg:top-0" delay={0}>
+            <Float className="hidden sm:left-0 sm:top-0 sm:block lg:left-[6%] lg:top-0" delay={0}>
               <p className="text-[11px] text-muted-foreground">Cliente respondido às</p>
               <p className="text-sm font-semibold">21h47 de um domingo</p>
             </Float>
-            <Float className="sm:right-0 sm:top-[420px] lg:right-[18%] lg:top-[440px]" delay={1200}>
+            <Float className="hidden sm:right-0 sm:top-[420px] sm:block lg:right-[18%] lg:top-[440px]" delay={1200}>
               <p className="flex items-center gap-2 text-sm font-semibold">
                 <span className="h-2 w-2 rounded-full bg-[#0c7a3a]" />
                 Link de pagamento enviado
@@ -309,11 +341,15 @@ export default function Home() {
       {/* Plataformas */}
       <Reveal className="mx-auto max-w-6xl px-4 pt-20 text-center">
         <p className="text-sm text-muted-foreground">Funciona com o link de pagamento de onde você já vende</p>
-        <div className="mt-5 flex flex-wrap justify-center gap-x-9 gap-y-3 text-lg font-bold text-foreground/35 sm:text-xl">
-          {PLATFORMS.map((p) => (
-            <span key={p}>{p}</span>
-          ))}
+        <div className="mt-6 overflow-hidden [mask-image:linear-gradient(to_right,transparent,black_12%,black_88%,transparent)] md:overflow-visible md:[mask-image:none]">
+          <div className="lp-marquee flex w-max items-center gap-3 md:w-auto md:flex-wrap md:justify-center md:gap-2">
+            <Logos />
+            <span className="contents md:hidden">
+              <Logos hidden />
+            </span>
+          </div>
         </div>
+        <p className="mt-4 text-xs text-muted-foreground">ou o link de pagamento do seu banco</p>
       </Reveal>
 
       {/* Como funciona */}
@@ -321,13 +357,13 @@ export default function Home() {
         <Reveal>
           <SectionTitle kicker="Como funciona" title="Três passos e o seu WhatsApp começa a vender" sub="Sem programador e sem instalar nada no celular." />
         </Reveal>
-        <Reveal className="mt-12 grid gap-5 md:grid-cols-3">
+        <Reveal className="mt-10 lp-scroll -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:overflow-visible md:px-0 md:pb-0 md:grid-cols-3 md:gap-5">
           {[
             { n: '1', t: 'Cadastre o produto e cole o link', d: 'Foto, preço, promoção, variações, estoque e o link onde o cliente paga.', bg: 'bg-[#2563eb]/[0.07]', mock: <ProductFormMock /> },
             { n: '2', t: 'Conecte o seu número', d: 'Leia o QR Code no painel. Os clientes continuam falando com o contato de sempre.', bg: 'bg-[#22d3ee]/[0.12]', mock: <QrMock /> },
             { n: '3', t: 'A IA atende e manda o link', d: 'Entende texto e áudio, responde com foto e preço e envia o link quando o cliente decide.', bg: 'bg-[#7dd3fc]/[0.22]', mock: <AudioMock /> },
           ].map((s) => (
-            <div key={s.n} className={`lp-lift flex flex-col gap-6 rounded-[32px] p-6 ${s.bg}`}>
+            <div key={s.n} className={`lp-lift flex w-[84%] flex-none snap-center flex-col gap-6 rounded-[32px] p-6 md:w-auto ${s.bg}`}>
               <div className="grid flex-1 content-center">{s.mock}</div>
               <div>
                 <span className="grid h-8 w-8 place-items-center rounded-full bg-card text-sm font-bold text-primary shadow-sm">{s.n}</span>
@@ -394,28 +430,28 @@ export default function Home() {
         <Reveal>
           <SectionTitle kicker="Recursos" title="Tudo que a sua loja precisa pra vender pelo WhatsApp" />
         </Reveal>
-        <Reveal className="mt-12 grid gap-5 md:grid-cols-6">
-          <div className="lp-lift rounded-[32px] border border-border bg-card p-6 md:col-span-4">
+        <Reveal className="mt-10 lp-scroll -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:overflow-visible md:px-0 md:pb-0 md:grid-cols-6 md:gap-5">
+          <div className="lp-lift rounded-[32px] border border-border bg-card w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-4">
             <h3 className="text-lg font-semibold">Quadro de vendas</h3>
             <p className="mt-1 text-sm text-muted-foreground">Cada conversa vira um card. A IA marca quando a venda fecha ou se perde.</p>
             <div className="mt-5"><KanbanMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] bg-[#22d3ee]/[0.12] p-6 md:col-span-2">
+          <div className="lp-lift rounded-[32px] bg-[#22d3ee]/[0.12] w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-2">
             <h3 className="text-lg font-semibold">Entende áudio</h3>
             <p className="mt-1 text-sm text-muted-foreground">O cliente manda áudio e a IA transcreve antes de responder.</p>
             <div className="mt-6"><AudioMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] bg-[#2563eb]/[0.07] p-6 md:col-span-3">
+          <div className="lp-lift rounded-[32px] bg-[#2563eb]/[0.07] w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-3">
             <h3 className="text-lg font-semibold">Construtor de agente</h3>
             <p className="mt-1 text-sm text-muted-foreground">Quatro papéis prontos pra IA assumir.</p>
             <div className="mt-5"><RolesMock /></div>
           </div>
-          <div className="lp-lift rounded-[32px] border border-border bg-card p-6 md:col-span-3">
+          <div className="lp-lift rounded-[32px] border border-border bg-card w-[86%] flex-none snap-center p-6 md:w-auto md:col-span-3">
             <h3 className="text-lg font-semibold">Passa pra uma pessoa quando precisa</h3>
             <p className="mt-1 text-sm text-muted-foreground">Gatilhos que você define e rodízio entre atendentes.</p>
             <div className="mt-5"><HandoffMock /></div>
           </div>
-          <div className="banner-card-surface lp-lift grid gap-5 rounded-[32px] p-6 text-white sm:p-8 md:col-span-6 md:grid-cols-3">
+          <div className="banner-card-surface lp-lift grid gap-5 rounded-[32px] p-6 w-[86%] flex-none snap-center text-white sm:p-8 md:w-auto md:col-span-6 md:grid-cols-3">
             {[
               ['Base de conhecimento', 'Cole o link da sua política de troca ou FAQ e a IA passa a usar.'],
               ['Importação por planilha', 'Suba o CSV do catálogo, inclusive o export padrão da Tray.'],
@@ -480,7 +516,8 @@ export default function Home() {
         </div>
       </Reveal>
 
-      <footer className="mx-auto mt-16 max-w-6xl px-4 pb-10">
+      <MobileCta />
+      <footer className="mx-auto mt-16 max-w-6xl px-4 pb-28 md:pb-10">
         <div className="flex flex-wrap items-center justify-between gap-4 border-t border-border pt-6 text-sm text-muted-foreground">
           <Image src="/zaptrix-logo-light.png" alt="Zaptrix" width={92} height={30} />
           <div className="flex gap-6">

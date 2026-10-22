@@ -528,3 +528,11 @@ body {
   .lp-msg, .lp-wave, .lp-dot, .lp-bob, .lp-type, .lp-caret, .lp-kanban, .lp-price { animation: none; }
   .lp-type { width: 100%; }
 }
+
+/* Landing — carrossel com snap no celular (vira grade no md+) e faixa de logos rolando */
+.lp-scroll { scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.lp-scroll::-webkit-scrollbar { display: none; }
+@keyframes lpMarquee { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+.lp-marquee { animation: lpMarquee 22s linear infinite; }
+@media (min-width: 768px) { .lp-marquee { animation: none; } }
+@media (prefers-reduced-motion: reduce) { .lp-marquee { animation: none; } }

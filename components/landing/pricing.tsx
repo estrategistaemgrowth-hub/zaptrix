@@ -38,7 +38,7 @@ export function Pricing() {
   return (
     <div className="grid gap-5">
       {/* Plano por quantidade */}
-      <div className="grid gap-6 rounded-[32px] border border-border bg-card p-6 sm:p-8 lg:grid-cols-[1.2fr_1fr] lg:items-center">
+      <div className="grid gap-6 rounded-[32px] border border-border bg-card p-5 sm:p-8 lg:grid-cols-[1.2fr_1fr] lg:items-center">
         <div>
           <span className="inline-block rounded-full bg-[#22d3ee]/15 px-3 py-1 text-xs font-semibold text-[#1d4ed8]">
             Pra quem está começando
@@ -94,11 +94,11 @@ export function Pricing() {
       </div>
 
       {/* Planos fixos */}
-      <div className="grid gap-5 md:grid-cols-3">
+      <div className="lp-scroll -mx-4 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 pt-3 md:mx-0 md:grid md:grid-cols-3 md:gap-5 md:overflow-visible md:px-0 md:pt-0">
         {BIG.map((p) => (
           <div
             key={p.name}
-            className={`lp-lift relative flex flex-col rounded-[32px] p-6 ${
+            className={`lp-lift relative flex w-[82%] flex-none snap-center flex-col rounded-[32px] p-6 md:w-auto ${
               p.featured ? 'banner-card-surface text-white md:-translate-y-3' : 'border border-border bg-card'
             }`}
           >

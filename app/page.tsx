@@ -1,7 +1,15 @@
 /* eslint-disable @next/next/no-img-element -- fotos de produto dos mockups vêm do Unsplash, sem next/image */
+// Linguagem visual: "planta técnica" (títulos condensados, etiquetas mono, bordas de tinta, fluxograma com setas),
+// com o azul da marca Zaptrix no papel de cor de sinalização.
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
+import { Reveal } from '@/components/reveal';
+import { Archivo, IBM_Plex_Mono, Public_Sans } from 'next/font/google';
+
+const display = Archivo({ subsets: ['latin'], axes: ['wdth'], variable: '--f-display' });
+const body = Public_Sans({ subsets: ['latin'], weight: ['400', '500', '600'], variable: '--f-body' });
+const mono = IBM_Plex_Mono({ subsets: ['latin'], weight: ['500'], variable: '--f-mono' });
 
 export const metadata: Metadata = {
   title: 'Zaptrix — seu catálogo vendendo no WhatsApp com IA',
@@ -10,24 +18,85 @@ export const metadata: Metadata = {
 };
 
 const IMG = (id: string, w = 480) => `https://images.unsplash.com/${id}?w=${w}&q=70&auto=format&fit=crop`;
-
 const SHOE = IMG('photo-1542291026-7eec264c27ff');
-const WATCH = IMG('photo-1523275335684-37898b6baf30');
-const SNEAKER = IMG('photo-1595950653106-6c9ebd614d3a');
-const CAP = IMG('photo-1585386959984-a4155224a1ad');
 
-/* ---------- Mockups (HTML puro, reproduzem as telas reais do sistema) ---------- */
+
+const D = (wdth = 78): React.CSSProperties => ({ fontFamily: 'var(--f-display)', fontVariationSettings: `"wdth" ${wdth}` });
+const M: React.CSSProperties = { fontFamily: 'var(--f-mono)' };
+
+function Label({ children, className = '' }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span style={M} className={`text-[11.5px] uppercase tracking-[.08em] text-muted-foreground ${className}`}>
+      {children}
+    </span>
+  );
+}
+
+function SecHead({ label, title, id }: { label: string; title: string; id: string }) {
+  return (
+    <div className="grid gap-2 border-t border-border pt-5">
+      <Label>{label}</Label>
+      <h2 id={id} style={D(84)} className="text-[30px] font-bold leading-[1.06] text-balance sm:text-[40px]">
+        {title}
+      </h2>
+    </div>
+  );
+}
+
+/* Etiqueta de ator do fluxograma */
+const ACTORS = {
+  cliente: { t: 'Cliente', c: 'border border-[#0a1730] text-[#0a1730]' },
+  ia: { t: 'IA Zaptrix', c: 'bg-[#2563eb] text-white' },
+  voce: { t: 'Você', c: 'bg-[#0a1730] text-white' },
+  equipe: { t: 'Equipe', c: 'border border-[#0c7a3a] text-[#0c7a3a]' },
+} as const;
+
+function Actor({ a }: { a: keyof typeof ACTORS }) {
+  return (
+    <span style={M} className={`justify-self-start whitespace-nowrap rounded-[3px] px-2 py-[3px] text-[11px] uppercase tracking-[.05em] ${ACTORS[a].c}`}>
+      {ACTORS[a].t}
+    </span>
+  );
+}
+
+function Node({ a, title, text, kind, i = 0 }: { a?: keyof typeof ACTORS; title: string; text?: string; kind?: 'sys' | 'decide' | 'done'; i?: number }) {
+  const k =
+    kind === 'sys'
+      ? 'border-2 border-[#2563eb] bg-white'
+      : kind === 'decide'
+        ? 'border-2 border-[#0a1730] bg-white'
+        : kind === 'done'
+          ? 'border border-[#0a1730] bg-[#0a1730] text-white'
+          : 'border border-border bg-white';
+  return (
+    <div data-r style={{ '--i': i } as React.CSSProperties} className={`grid min-w-0 gap-1.5 rounded-md px-3.5 py-3 ${k}`}>
+      {a && <Actor a={a} />}
+      <b className="text-[15.5px] leading-snug">{title}</b>
+      {text && <p className={`text-[14px] leading-[1.45] ${kind === 'done' ? 'text-white/75' : 'text-muted-foreground'}`}>{text}</p>}
+    </div>
+  );
+}
+
+function Down({ className = 'ml-6', i = 0 }: { className?: string; i?: number }) {
+  return (
+    <div aria-hidden data-draw style={{ '--i': i } as React.CSSProperties} className={`relative h-6 w-[2px] bg-[#0a1730] ${className}`}>
+      <span className="absolute -bottom-px -left-[5px] border-x-[6px] border-t-[6px] border-x-transparent border-t-[#0a1730]" />
+    </div>
+  );
+}
+
+/* ---------- Mockups das telas reais ---------- */
 
 function Bubble({ me, children, time }: { me?: boolean; children: React.ReactNode; time: string }) {
   return (
     <div className={`flex ${me ? 'justify-end' : 'justify-start'}`}>
       <div
         className={`max-w-[82%] rounded-lg px-2.5 py-1.5 text-[13px] leading-snug text-[#111b21] shadow-[0_1px_0.5px_rgba(11,20,26,0.13)] ${
-          me ? 'bg-[#d9fdd3] rounded-tr-none' : 'bg-white rounded-tl-none'
+          me ? 'rounded-tr-none bg-[#d9fdd3]' : 'rounded-tl-none bg-white'
         }`}
       >
         {children}
-        <span className="block text-right text-[10px] text-[#667781] mt-0.5">{time}</span>
+        <span className="mt-0.5 block text-right text-[10px] text-[#667781]">{time}</span>
       </div>
     </div>
   );
@@ -35,37 +104,34 @@ function Bubble({ me, children, time }: { me?: boolean; children: React.ReactNod
 
 function PhoneChat() {
   return (
-    <div className="relative mx-auto w-[300px] sm:w-[320px] rounded-[44px] bg-[#0b1220] p-3 shadow-[0_40px_80px_-30px_rgba(29,78,216,0.55)]">
-      <div className="absolute left-1/2 top-3 h-5 w-24 -translate-x-1/2 rounded-b-2xl bg-[#0b1220] z-10" />
+    <div className="relative mx-auto w-[300px] rounded-[44px] border-2 border-[#0a1730] bg-[#0a1730] p-2.5 sm:w-[320px]">
+      <div className="absolute left-1/2 top-2.5 z-10 h-5 w-24 -translate-x-1/2 rounded-b-2xl bg-[#0a1730]" />
       <div className="overflow-hidden rounded-[34px] bg-[#efeae2]">
-        <div className="flex items-center gap-2.5 bg-[#f0f2f5] px-3 pb-2.5 pt-7 border-b border-black/5">
-          <div className="h-8 w-8 rounded-full bg-[#0f2a5c] text-white text-xs font-bold grid place-items-center">LA</div>
+        <div className="flex items-center gap-2.5 border-b border-black/5 bg-[#f0f2f5] px-3 pb-2.5 pt-7">
+          <div className="grid h-8 w-8 place-items-center rounded-full bg-[#0f2a5c] text-xs font-bold text-white">LA</div>
           <div className="leading-tight">
             <p className="text-[13px] font-semibold text-[#111b21]">Loja Aurora</p>
             <p className="text-[11px] text-[#667781]">online</p>
           </div>
         </div>
-        <div className="space-y-1.5 px-2.5 py-3 h-[560px] overflow-hidden">
+        <div className="h-[540px] space-y-1.5 overflow-hidden px-2.5 py-3">
           <Bubble me time="21:47">Oi! Ainda tem aquele tênis vermelho no 39?</Bubble>
-          <Bubble time="21:47">
-            Oi, Marina! Tem sim, o Runner Classic no 39 está com 4 pares em estoque. Olha ele aqui:
-          </Bubble>
+          <Bubble time="21:47">Oi, Marina! Tem sim, o Runner Classic no 39 está com 4 pares em estoque. Olha ele aqui:</Bubble>
           <div className="flex justify-start">
             <div className="w-[78%] rounded-lg rounded-tl-none bg-white p-1 shadow-[0_1px_0.5px_rgba(11,20,26,0.13)]">
-              <img src={SHOE} alt="" className="h-36 w-full rounded-md object-cover" />
+              <img src={SHOE} alt="Foto do tênis enviada pela IA" className="h-36 w-full rounded-md object-cover" />
               <p className="px-1.5 pt-1.5 text-[13px] text-[#111b21]">
                 Runner Classic Vermelho
                 <br />
-                <span className="text-[#667781] line-through text-[12px]">R$ 399,90</span>{' '}
-                <strong>R$ 329,90</strong>
+                <span className="text-[12px] text-[#667781] line-through">R$ 399,90</span> <strong>R$ 329,90</strong>
               </p>
-              <span className="block text-right text-[10px] text-[#667781] px-1.5 pb-0.5">21:47</span>
+              <span className="block px-1.5 pb-0.5 text-right text-[10px] text-[#667781]">21:47</span>
             </div>
           </div>
           <Bubble me time="21:48">Parcela em quantas vezes?</Bubble>
           <Bubble time="21:48">
-            Em até 6x sem juros no cartão. Se quiser garantir o seu, é só finalizar por aqui:
-            <span className="mt-1 block rounded-md bg-[#f0f2f5] px-2 py-1.5 text-[12px] text-[#027eb5] underline break-all">
+            Em até 6x sem juros no cartão. Pra garantir o seu, é só finalizar por aqui:
+            <span className="mt-1 block break-all rounded-md bg-[#f0f2f5] px-2 py-1.5 text-[12px] text-[#027eb5] underline">
               pay.lojaaurora.com.br/runner-39
             </span>
           </Bubble>
@@ -76,14 +142,16 @@ function PhoneChat() {
   );
 }
 
-function BrowserFrame({ url, children, className = '' }: { url: string; children: React.ReactNode; className?: string }) {
+function BrowserFrame({ url, children }: { url: string; children: React.ReactNode }) {
   return (
-    <div className={`overflow-hidden rounded-2xl border border-border bg-card shadow-[0_30px_60px_-30px_rgba(37,99,235,0.35)] ${className}`}>
-      <div className="flex items-center gap-2 border-b border-border bg-muted px-4 py-2.5">
-        <span className="h-2.5 w-2.5 rounded-full bg-[#f87171]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#fbbf24]" />
-        <span className="h-2.5 w-2.5 rounded-full bg-[#34d399]" />
-        <span className="ml-3 flex-1 truncate rounded-full bg-card px-3 py-1 text-[11px] text-muted-foreground">{url}</span>
+    <div className="lp-lift overflow-hidden rounded-lg border-2 border-[#0a1730] bg-white">
+      <div className="flex items-center gap-2 border-b-2 border-[#0a1730] bg-background px-3 py-2">
+        <span className="h-2.5 w-2.5 rounded-full border border-[#0a1730]" />
+        <span className="h-2.5 w-2.5 rounded-full border border-[#0a1730]" />
+        <span className="h-2.5 w-2.5 rounded-full border border-[#0a1730]" />
+        <span style={M} className="ml-2 flex-1 truncate text-[11px] text-muted-foreground">
+          {url}
+        </span>
       </div>
       {children}
     </div>
@@ -92,11 +160,11 @@ function BrowserFrame({ url, children, className = '' }: { url: string; children
 
 function Field({ label, value, highlight }: { label: string; value: string; highlight?: boolean }) {
   return (
-    <div>
-      <p className="mb-1 text-[11px] font-medium text-foreground">{label}</p>
+    <div className="min-w-0">
+      <p className="mb-1 text-[11px] font-medium text-[#0a1730]">{label}</p>
       <div
-        className={`rounded-lg border px-3 py-2 text-[12px] truncate ${
-          highlight ? 'border-[#3b82f6] ring-4 ring-[#3b82f6]/15 text-foreground' : 'border-border text-foreground'
+        className={`truncate rounded-md border px-2.5 py-1.5 text-[12px] text-[#0a1730] ${
+          highlight ? 'border-2 border-[#2563eb] bg-[#2563eb]/5' : 'border-border'
         }`}
       >
         {value}
@@ -108,9 +176,9 @@ function Field({ label, value, highlight }: { label: string; value: string; high
 function ProductFormMock() {
   return (
     <BrowserFrame url="zaptrix.agenciamavi.com.br/produtos">
-      <div className="grid gap-5 p-5 sm:grid-cols-[150px_1fr]">
-        <img src={SHOE} alt="" className="h-40 w-full rounded-xl object-cover sm:h-full" />
-        <div className="grid grid-cols-2 gap-3">
+      <div className="grid gap-4 p-4 sm:grid-cols-[140px_1fr]">
+        <img src={SHOE} alt="" className="h-36 w-full rounded-md object-cover sm:h-full" />
+        <div className="grid grid-cols-2 gap-2.5">
           <div className="col-span-2">
             <Field label="Nome *" value="Runner Classic Vermelho" />
           </div>
@@ -121,13 +189,6 @@ function ProductFormMock() {
           <div className="col-span-2">
             <Field label="Link de compra" value="https://pay.lojaaurora.com.br/runner-39" highlight />
           </div>
-          <div className="col-span-2 flex flex-wrap gap-1.5">
-            {['36', '37', '38', '39', '40'].map((t) => (
-              <span key={t} className="rounded-full border border-border px-2.5 py-0.5 text-[11px] text-muted-foreground">
-                Tam. {t}
-              </span>
-            ))}
-          </div>
         </div>
       </div>
     </BrowserFrame>
@@ -135,47 +196,31 @@ function ProductFormMock() {
 }
 
 const KANBAN = [
-  {
-    col: 'Em atendimento',
-    tone: 'bg-[#3b82f6]',
-    cards: [
-      { n: 'Marina Souza', m: 'Parcela em quantas vezes?', tag: 'IA respondendo' },
-      { n: 'Rafael Lima', m: 'Tem a versão preta?', tag: 'IA respondendo' },
-    ],
-  },
-  {
-    col: 'Com humano',
-    tone: 'bg-[#9b5a00]',
-    cards: [{ n: 'Cláudia Reis', m: 'Quero trocar o tamanho do pedido', tag: 'Transferido p/ Ana' }],
-  },
-  {
-    col: 'Ganho',
-    tone: 'bg-[#0c7a3a]',
-    cards: [
-      { n: 'Pedro Alves', m: 'Paguei, obrigado!', tag: 'R$ 329,90' },
-      { n: 'Júlia Nunes', m: 'Fechado, pode mandar', tag: 'R$ 189,00' },
-    ],
-  },
+  { col: 'Em atendimento', dot: 'bg-[#2563eb]', cards: [['Marina Souza', 'Parcela em quantas vezes?', 'IA respondendo'], ['Rafael Lima', 'Tem a versão preta?', 'IA respondendo']] },
+  { col: 'Com humano', dot: 'bg-[#9b5a00]', cards: [['Cláudia Reis', 'Quero trocar o tamanho', 'Com Ana']] },
+  { col: 'Ganho', dot: 'bg-[#0c7a3a]', cards: [['Pedro Alves', 'Paguei, obrigado!', 'R$ 329,90'], ['Júlia Nunes', 'Fechado, pode mandar', 'R$ 189,00']] },
 ];
 
 function KanbanMock() {
   return (
     <BrowserFrame url="zaptrix.agenciamavi.com.br/atendimento">
-      <div className="grid gap-3 bg-background p-4 sm:grid-cols-3">
+      <div className="grid gap-2.5 bg-background p-3 sm:grid-cols-3">
         {KANBAN.map((c) => (
-          <div key={c.col} className="rounded-xl bg-muted/70 p-2.5">
-            <p className="mb-2.5 flex items-center gap-2 px-1 text-[12px] font-semibold text-foreground">
-              <span className={`h-2 w-2 rounded-full ${c.tone}`} />
+          <div key={c.col} className="min-w-0">
+            <p className="mb-2 flex items-center gap-2 px-0.5 text-[12px] font-semibold text-[#0a1730]">
+              <span className={`h-2 w-2 rounded-full ${c.dot}`} />
               {c.col}
-              <span className="ml-auto text-muted-foreground font-normal">{c.cards.length}</span>
+              <span style={M} className="ml-auto text-[11px] font-normal text-muted-foreground">
+                {c.cards.length}
+              </span>
             </p>
             <div className="space-y-2">
-              {c.cards.map((k) => (
-                <div key={k.n} className="rounded-lg border border-border bg-card p-2.5">
-                  <p className="text-[12px] font-semibold text-foreground">{k.n}</p>
-                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{k.m}</p>
-                  <span className="mt-2 inline-block rounded-full bg-[#2563eb]/10 px-2 py-0.5 text-[10px] font-medium text-[#1d4ed8]">
-                    {k.tag}
+              {c.cards.map(([n, m, tag]) => (
+                <div key={n} className="rounded-md border border-border bg-white p-2.5">
+                  <p className="text-[12px] font-semibold text-[#0a1730]">{n}</p>
+                  <p className="mt-0.5 truncate text-[11px] text-muted-foreground">{m}</p>
+                  <span style={M} className="mt-2 inline-block rounded-[3px] bg-[#2563eb]/10 px-1.5 py-0.5 text-[10px] uppercase tracking-[.04em] text-[#1d4ed8]">
+                    {tag}
                   </span>
                 </div>
               ))}
@@ -188,57 +233,41 @@ function KanbanMock() {
 }
 
 const PROFILES = [
-  { label: 'Vendas', d: 'Apresenta produtos e conduz até o fechamento', on: true },
-  { label: 'Suporte', d: 'Resolve dúvidas técnicas, pedidos e trocas' },
-  { label: 'Atendimento Geral', d: 'Tira dúvidas gerais e direciona o cliente' },
-  { label: 'Pós-venda', d: 'Acompanha a experiência e oferece novos produtos' },
+  ['Vendas', 'Apresenta produtos e conduz até o fechamento'],
+  ['Suporte', 'Resolve dúvidas técnicas, pedidos e trocas'],
+  ['Atendimento Geral', 'Tira dúvidas gerais e direciona o cliente'],
+  ['Pós-venda', 'Acompanha a experiência e oferece novos produtos'],
 ];
-
-function AgentMock() {
-  return (
-    <BrowserFrame url="zaptrix.agenciamavi.com.br/ia">
-      <div className="p-5">
-        <p className="text-[15px] font-bold text-foreground">Construtor de Agente</p>
-        <p className="mb-4 text-[12px] text-muted-foreground">Escolha o papel da sua IA</p>
-        <div className="grid gap-2.5 sm:grid-cols-2">
-          {PROFILES.map((p) => (
-            <div
-              key={p.label}
-              className={`rounded-xl border p-3 ${p.on ? 'border-[#3b82f6] ring-4 ring-[#3b82f6]/15' : 'border-border'}`}
-            >
-              <p className="text-[13px] font-semibold text-foreground">{p.label}</p>
-              <p className="mt-0.5 text-[11px] leading-snug text-muted-foreground">{p.d}</p>
-            </div>
-          ))}
-        </div>
-        <div className="mt-4 rounded-xl border border-border p-3">
-          <p className="text-[11px] font-medium text-foreground mb-1">Transferir para humano quando</p>
-          <p className="text-[12px] text-muted-foreground">o cliente pedir troca, reclamar de entrega ou pedir desconto acima de 10%</p>
-        </div>
-      </div>
-    </BrowserFrame>
-  );
-}
 
 /* ---------- Página ---------- */
 
-const EXTRAS = [
-  ['Entende áudio', 'O cliente manda áudio, a IA transcreve e responde em texto.'],
-  ['Variações de verdade', 'Tamanho, cor e estoque por variação, sem a IA prometer o que acabou.'],
-  ['Base de conhecimento', 'Cole o link da sua política de troca ou FAQ e a IA passa a usar.'],
-  ['Importação por planilha', 'Suba o CSV do catálogo, inclusive o export padrão da Tray.'],
-  ['Roleta de atendimento', 'Conversas transferidas são distribuídas entre a sua equipe.'],
-  ['Painel de resultados', 'Conversas, vendas ganhas e perdidas acompanhadas no dashboard.'],
+const STEPS = [
+  ['Cadastre o produto', 'Nome, preço, promoção, foto, variações de tamanho e cor, estoque. Muitos produtos? Suba a planilha.'],
+  ['Cole o link de pagamento', 'Qualquer link serve: checkout da sua loja, Mercado Pago, PagSeguro, link do banco.'],
+  ['Escolha o papel da IA', 'Vendas, suporte, atendimento geral ou pós-venda, e quando ela passa a conversa pra sua equipe.'],
+  ['Conecte o WhatsApp', 'Lê o QR Code no painel e o seu número passa a responder com IA.'],
+];
+
+const TRIGGERS = [
+  ['Cliente manda áudio', 'a IA transcreve e responde em texto'],
+  ['Pergunta sobre um produto', 'responde com foto, preço e estoque do catálogo'],
+  ['Pergunta sobre troca ou frete', 'responde pela sua base de conhecimento'],
+  ['Cliente decide comprar', 'envia o link de compra daquele produto'],
+  ['Pede pra falar com alguém', 'transfere pra sua equipe, em rodízio'],
+  ['Venda fechada ou perdida', 'o card muda de coluna no quadro'],
 ];
 
 export default function Home() {
   return (
-    <div className="min-h-screen bg-background text-foreground overflow-x-hidden">
-      <header className="sticky top-0 z-30 border-b border-border/60 bg-background/85 backdrop-blur">
+    <div
+      className={`${display.variable} ${body.variable} ${mono.variable} min-h-screen overflow-x-hidden bg-background text-foreground`}
+      style={{ fontFamily: 'var(--f-body)' }}
+    >
+      <header className="sticky top-0 z-30 border-b-2 border-[#0a1730] bg-card/95 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3 sm:px-6">
-          <Image src="/zaptrix-logo-light.png" alt="Zaptrix" width={124} height={40} priority />
-          <nav className="flex items-center gap-2 sm:gap-4 text-sm">
-            <Link href="/login" className="rounded-full px-4 py-2 font-medium text-foreground hover:bg-muted">
+          <Image src="/zaptrix-logo-light.png" alt="Zaptrix" width={118} height={38} priority />
+          <nav className="flex items-center gap-1.5 text-sm sm:gap-3">
+            <Link href="/login" className="rounded-full px-4 py-2 font-medium hover:bg-card">
               Entrar
             </Link>
             <Link href="/assinar" className="btn-gradient px-5 py-2 font-semibold">
@@ -248,141 +277,174 @@ export default function Home() {
         </div>
       </header>
 
-      {/* Hero */}
-      <section className="relative">
-        <div
-          aria-hidden
-          className="pointer-events-none absolute -right-40 -top-40 h-[620px] w-[620px] rounded-full opacity-30 blur-3xl gradient-brand"
-        />
-        <div className="relative mx-auto grid max-w-6xl items-center gap-14 px-4 pb-20 pt-14 sm:px-6 lg:grid-cols-[1.15fr_1fr] lg:pt-20">
-          <div>
-            <p className="mb-5 inline-block rounded-full border border-[#3b82f6]/30 bg-card px-3 py-1 text-xs font-medium text-[#1d4ed8]">
-              Atendimento e vendas no WhatsApp com IA
-            </p>
-            <h1 className="text-4xl font-extrabold leading-[1.05] tracking-tight sm:text-6xl">
+      <main className="mx-auto grid max-w-6xl gap-20 px-4 pb-16 sm:px-6">
+        {/* Capa */}
+        <Reveal className="grid items-start gap-12 pt-10 lg:grid-cols-[1.2fr_1fr] lg:pt-16">
+          <div className="grid gap-6">
+            <div className="flex flex-wrap justify-between gap-3">
+              <Label>Atendimento e vendas no WhatsApp com IA</Label>
+              <Label>Pra qualquer loja</Label>
+            </div>
+            <h1 style={D(70)} className="text-[44px] font-extrabold leading-[1.02] tracking-[-.01em] text-balance sm:text-[72px]">
               Seu catálogo vendendo no WhatsApp,{' '}
-              <span className="text-[#1d4ed8]">às 21h47 de um domingo.</span>
+              <mark className="gradient-brand px-[.12em] text-white [box-decoration-break:clone]">às 21h47 de um domingo.</mark>
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-relaxed text-muted-foreground">
-              Você cadastra o produto com foto, preço e o link de pagamento. A IA do Zaptrix responde o cliente no seu número,
-              mostra a foto, confere o estoque e manda o link na hora em que ele decide comprar.
+            <p className="max-w-[60ch] text-[17px] leading-relaxed text-muted-foreground">
+              Você cadastra o produto com foto, preço e o link de pagamento. A IA do Zaptrix responde no seu número, mostra a
+              foto, confere o estoque e manda o link na hora em que o cliente decide comprar. Serve pra loja na Tray, pra quem
+              vende pelo Instagram ou pra quem só tem o WhatsApp e um link do Mercado Pago.
             </p>
-            <p className="mt-3 max-w-xl text-sm text-muted-foreground">
-              Serve pra loja virtual na Tray, pra quem vende pelo Instagram ou pra quem só tem o WhatsApp e um link do
-              Mercado Pago, PagSeguro ou do checkout que já usa.
-            </p>
-            <div className="mt-8 flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3">
               <Link href="/assinar" className="btn-gradient px-7 py-3.5 text-base font-semibold">
                 Quero vender pelo WhatsApp
               </Link>
-              <a href="#como-funciona" className="rounded-full px-5 py-3.5 text-base font-medium text-foreground hover:bg-muted">
+              <a href="#fluxo" className="rounded-full border-2 border-[#0a1730] px-6 py-3 text-base font-semibold hover:bg-card">
                 Ver como funciona
               </a>
             </div>
-          </div>
-          <PhoneChat />
-        </div>
-      </section>
-
-      {/* Como funciona */}
-      <section id="como-funciona" className="border-t border-border bg-card">
-        <div className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-          <h2 className="max-w-2xl text-3xl font-bold tracking-tight sm:text-4xl">
-            Três passos entre o seu produto e o Pix na conta.
-          </h2>
-
-          <div className="mt-14 grid items-center gap-10 lg:grid-cols-[1fr_1.3fr]">
-            <div>
-              <span className="text-sm font-bold text-[#2563eb]">01</span>
-              <h3 className="mt-2 text-2xl font-bold">Cadastre o produto e cole o link de pagamento</h3>
-              <p className="mt-3 leading-relaxed text-muted-foreground">
-                Nome, preço, preço promocional, foto, variações e o link onde o cliente paga. Qualquer link serve: checkout
-                da sua loja, link do Mercado Pago, do PagSeguro ou do seu banco. Tem muito produto? Importa a planilha.
-              </p>
-            </div>
-            <ProductFormMock />
-          </div>
-
-          <div className="mt-20 grid items-center gap-10 lg:grid-cols-[1.3fr_1fr]">
-            <div className="order-2 lg:order-1">
-              <AgentMock />
-            </div>
-            <div className="order-1 lg:order-2">
-              <span className="text-sm font-bold text-[#2563eb]">02</span>
-              <h3 className="mt-2 text-2xl font-bold">Conecte seu número e diga como a IA deve agir</h3>
-              <p className="mt-3 leading-relaxed text-muted-foreground">
-                Lê o QR Code e o seu WhatsApp passa a responder com IA. Você escolhe o papel do agente (vendas, suporte,
-                atendimento ou pós-venda) e define em que situação a conversa vai para uma pessoa da equipe.
-              </p>
-            </div>
-          </div>
-
-          <div className="mt-20 grid items-center gap-10 lg:grid-cols-[1fr_1.3fr]">
-            <div>
-              <span className="text-sm font-bold text-[#2563eb]">03</span>
-              <h3 className="mt-2 text-2xl font-bold">Acompanhe cada conversa até virar venda</h3>
-              <p className="mt-3 leading-relaxed text-muted-foreground">
-                Todas as conversas ficam num quadro: quem a IA está atendendo, quem foi passado para um humano e quem já
-                comprou. Se o cliente travar, você entra na conversa pelo próprio painel.
-              </p>
-            </div>
-            <KanbanMock />
-          </div>
-        </div>
-      </section>
-
-      {/* Recursos */}
-      <section className="mx-auto max-w-6xl px-4 py-20 sm:px-6">
-        <div className="grid gap-12 lg:grid-cols-[1fr_1.6fr]">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight">O que vem junto</h2>
-            <p className="mt-3 text-muted-foreground">
-              Tudo isso está no mesmo painel, sem instalar nada no celular.
-            </p>
-            <div className="mt-8 grid grid-cols-3 gap-2">
-              {[WATCH, SNEAKER, CAP].map((src) => (
-                <img key={src} src={src} alt="" className="aspect-square w-full rounded-xl object-cover" />
+            <div className="mt-2 grid grid-cols-3 border-t-2 border-[#0a1730]">
+              {[
+                ['24h', 'respondendo no seu número'],
+                ['4', 'papéis de IA pra escolher'],
+                ['1 link', 'de pagamento por produto, de onde você quiser'],
+              ].map(([n, t]) => (
+                <div key={n} className="grid min-w-0 gap-0.5 pr-2 pt-3">
+                  <b style={D(80)} className="text-[30px] font-extrabold tabular-nums">
+                    {n}
+                  </b>
+                  <span className="text-[13px] leading-tight text-muted-foreground">{t}</span>
+                </div>
               ))}
             </div>
           </div>
-          <dl className="grid gap-x-10 gap-y-8 sm:grid-cols-2">
-            {EXTRAS.map(([t, d]) => (
-              <div key={t} className="border-l-2 border-[#3b82f6] pl-4">
-                <dt className="font-semibold">{t}</dt>
-                <dd className="mt-1 text-sm leading-relaxed text-muted-foreground">{d}</dd>
+          <PhoneChat />
+        </Reveal>
+
+        {/* Passos */}
+        <Reveal aria-labelledby="s-passos" className="grid gap-8">
+          <SecHead id="s-passos" label="Configuração · uma vez só" title="Do cadastro ao primeiro atendimento" />
+          <div className="grid items-start gap-10 lg:grid-cols-[1fr_1.15fr]">
+            <ol className="grid gap-4">
+              {STEPS.map(([t, d], i) => (
+                <li key={t} className="grid grid-cols-[40px_1fr] items-start gap-3">
+                  <span style={D(80)} className="grid h-10 w-10 place-items-center rounded-[4px] bg-[#0a1730] text-[22px] font-extrabold text-white">
+                    {i + 1}
+                  </span>
+                  <div>
+                    <b className="block">{t}</b>
+                    <span className="text-[15px] text-muted-foreground">{d}</span>
+                  </div>
+                </li>
+              ))}
+            </ol>
+            <div className="grid gap-3">
+              <ProductFormMock />
+              <p className="text-[13px] text-muted-foreground">
+                O campo <b className="text-[#0a1730]">Link de compra</b> é o que a IA manda pro cliente na hora do fechamento.
+              </p>
+            </div>
+          </div>
+        </Reveal>
+
+        {/* Fluxograma */}
+        <Reveal id="fluxo" aria-labelledby="s-fluxo" className="grid scroll-mt-20 gap-6">
+          <SecHead id="s-fluxo" label="Fluxo do atendimento" title="Do “oi” ao pagamento" />
+          <div className="flex flex-wrap gap-1.5" aria-label="Legenda">
+            <Actor a="cliente" />
+            <Actor a="ia" />
+            <Actor a="equipe" />
+            <Actor a="voce" />
+          </div>
+          <div className="grid gap-10 lg:grid-cols-[1fr_1fr]">
+            <div className="grid max-w-[560px]">
+              <Node i={0} a="cliente" title="Manda mensagem no seu WhatsApp" text="Texto ou áudio, a qualquer hora." />
+              <Down i={1} />
+              <Node i={2} a="ia" kind="sys" title="Lê o catálogo e a base de conhecimento" text="Áudio é transcrito antes. A resposta sai com foto, preço promocional e estoque da variação pedida." />
+              <Down i={3} />
+              <Node i={4} a="ia" kind="decide" title="Dá pra resolver sozinha?" />
+              <div className="grid grid-cols-2 gap-2">
+                <div className="grid content-start">
+                  <Label className="py-1.5 pl-8">Sim</Label>
+                  <Down i={5} className="ml-6 h-4" />
+                  <Node i={6} title="Manda o link de compra" text="Na hora em que o cliente decide." />
+                </div>
+                <div className="grid content-start">
+                  <Label className="py-1.5 pl-8">Não</Label>
+                  <Down i={5} className="ml-6 h-4" />
+                  <Node i={6} a="equipe" title="Passa pra sua equipe" text="Pelo gatilho que você definiu, em rodízio entre atendentes." />
+                </div>
+              </div>
+              <Down i={7} />
+              <Node i={8} kind="done" title="Card vai pra Ganho ou Perdido" text="A IA marca o estágio da conversa e você acompanha tudo no quadro." />
+            </div>
+            <div className="grid content-start gap-3">
+              <Label>O quadro que você acompanha</Label>
+              <KanbanMock />
+              <div className="mt-4 rounded-md border-2 border-[#0a1730] bg-card p-4">
+                <Label>Construtor de agente</Label>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {PROFILES.map(([t, d], i) => (
+                    <div key={t} className={`lp-lift rounded-md bg-white p-3 ${i === 0 ? 'border-2 border-[#2563eb]' : 'border border-border'}`}>
+                      <b className="text-[14px]">{t}</b>
+                      <p className="mt-0.5 text-[12.5px] leading-snug text-muted-foreground">{d}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </Reveal>
+
+        {/* Gatilhos */}
+        <Reveal aria-labelledby="s-auto" className="grid gap-6">
+          <SecHead id="s-auto" label="Sem ninguém no celular" title="Cada mensagem já tem resposta" />
+          <div className="grid gap-2 md:grid-cols-2">
+            {TRIGGERS.map(([t, r]) => (
+              <div
+                key={t}
+                className="grid grid-cols-[minmax(0,1fr)_22px_minmax(0,1.25fr)] items-center gap-2.5 lp-lift rounded-md border border-border bg-card p-3 text-[14.5px]"
+              >
+                <b className="font-semibold">{t}</b>
+                <i aria-hidden className="relative h-[2px] bg-[#0a1730]">
+                  <span className="absolute -right-0.5 -top-1 border-y-[5px] border-l-[6px] border-y-transparent border-l-[#0a1730]" />
+                </i>
+                <span className="text-muted-foreground">{r}</span>
               </div>
             ))}
-          </dl>
-        </div>
-      </section>
+          </div>
+          <div className="grid gap-1 banner-card-surface rounded-md p-5 text-white">
+            <b style={D(85)} className="text-[22px]">
+              Tudo pelo navegador, nada pra instalar
+            </b>
+            <p className="text-[15px] text-white/85">
+              O painel abre no computador ou no celular. O WhatsApp continua sendo o seu número de sempre.
+            </p>
+          </div>
+        </Reveal>
 
-      {/* CTA final */}
-      <section className="px-4 pb-20 sm:px-6">
-        <div className="banner-card-surface mx-auto max-w-6xl rounded-[32px] px-6 py-14 text-white sm:px-14">
-          <h2 className="max-w-2xl text-3xl font-bold leading-tight sm:text-4xl">
-            Seu próximo cliente vai mandar mensagem fora do horário. Deixa alguém respondendo.
+        {/* CTA */}
+        <Reveal className="grid gap-5 rounded-lg border-2 border-[#0a1730] bg-card p-6 sm:p-10">
+          <Label>Comece hoje</Label>
+          <h2 style={D(76)} className="max-w-[20ch] text-[34px] font-extrabold leading-[1.04] text-balance sm:text-[52px]">
+            O próximo cliente vai mandar mensagem fora do horário.{' '}
+            <mark className="gradient-brand px-[.1em] text-white [box-decoration-break:clone]">Deixa alguém respondendo.</mark>
           </h2>
-          <p className="mt-4 max-w-xl text-white/75">
-            Crie a conta, cadastre os primeiros produtos e conecte o WhatsApp no mesmo dia.
-          </p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link href="/assinar" className="banner-cta rounded-full bg-white px-7 py-3.5 font-semibold text-[#0f2a5c]">
+          <div className="flex flex-wrap gap-3">
+            <Link href="/assinar" className="btn-gradient px-7 py-3.5 font-semibold">
               Criar minha conta
             </Link>
-            <Link href="/login" className="rounded-full border border-white/30 px-7 py-3.5 font-medium text-white hover:bg-white/10">
+            <Link href="/login" className="rounded-full border-2 border-[#0a1730] px-6 py-3 font-semibold hover:bg-card">
               Já sou cliente
             </Link>
           </div>
-        </div>
-      </section>
+        </Reveal>
+      </main>
 
-      <footer className="border-t border-border">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-6 text-sm text-muted-foreground sm:px-6">
-          <span>Zaptrix · Agência MAVI</span>
-          <Link href="/login" className="hover:text-foreground">
-            Área do cliente
-          </Link>
-        </div>
+      <footer className="mx-auto flex max-w-6xl flex-wrap justify-between gap-3 border-t border-border px-4 py-6 text-[13px] text-muted-foreground sm:px-6">
+        <span>Zaptrix · Agência MAVI</span>
+        <Link href="/login" className="hover:text-[#0a1730]">
+          Área do cliente
+        </Link>
       </footer>
     </div>
   );

@@ -432,3 +432,55 @@ body {
 .avatar-stack > *:first-child {
   margin-left: 0;
 }
+
+/* Landing (app/page.tsx) — reveal ao rolar: sobe 24px em 620ms, filhos
+   [data-r] entram em cascata (--i × 90ms). Setas [data-draw] se desenham
+   de cima pra baixo. Tudo desligado com prefers-reduced-motion. */
+.lp-reveal > *,
+.lp-reveal [data-r] {
+  opacity: 0;
+  transform: translateY(24px);
+  transition: opacity 620ms cubic-bezier(0.22, 0.61, 0.36, 1), transform 620ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.lp-reveal [data-draw] {
+  transform: scaleY(0);
+  transform-origin: top;
+  transition: transform 420ms cubic-bezier(0.22, 0.61, 0.36, 1);
+  transition-delay: calc(var(--i, 0) * 90ms);
+}
+.lp-reveal > :nth-child(2) { --i: 1; }
+.lp-reveal > :nth-child(3) { --i: 2; }
+.lp-reveal > :nth-child(n + 4) { --i: 3; }
+.lp-reveal.is-in > *,
+.lp-reveal.is-in [data-r] {
+  opacity: 1;
+  transform: none;
+}
+.lp-reveal.is-in [data-draw] {
+  transform: none;
+}
+
+/* Hover com recompensa nos cards e CTAs da landing */
+.lp-lift {
+  transition: transform 180ms cubic-bezier(0.22, 0.61, 0.36, 1), box-shadow 180ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+.lp-lift:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 24px -12px rgba(37, 99, 235, 0.45);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-reveal > *,
+  .lp-reveal [data-r],
+  .lp-reveal [data-draw] {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
+  .lp-lift,
+  .lp-lift:hover {
+    transform: none;
+    transition: none;
+  }
+}
